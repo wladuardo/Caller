@@ -18,6 +18,8 @@
 		2F1B1F4A2F82E1B500A1B9E5 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 2F1B1F492F82E1B500A1B9E5 /* FirebaseMessaging */; };
 		2F1B1F512F82E6E300A1B9E5 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2F1B1F502F82E6E300A1B9E5 /* GoogleSignIn */; };
 		2F1B1F532F82E6E300A1B9E5 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 2F1B1F522F82E6E300A1B9E5 /* GoogleSignInSwift */; };
+		2FFA08762F84541400FBFAD9 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 2FFA08752F84541400FBFAD9 /* FirebaseStorage */; };
+		2FFA08782F8456B100FBFAD9 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 2FFA08772F8456B100FBFAD9 /* FirebaseFunctions */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,9 +57,11 @@
 				2F1B1F3C2F82E1B500A1B9E5 /* FirebaseAnalytics in Frameworks */,
 				2F1B1F3E2F82E1B500A1B9E5 /* FirebaseAuth in Frameworks */,
 				2F1B1F482F82E1B500A1B9E5 /* FirebaseInAppMessaging-Beta in Frameworks */,
+				2FFA08762F84541400FBFAD9 /* FirebaseStorage in Frameworks */,
 				2F1B1F512F82E6E300A1B9E5 /* GoogleSignIn in Frameworks */,
 				2F1B1F422F82E1B500A1B9E5 /* FirebaseCrashlytics in Frameworks */,
 				2F1B1F402F82E1B500A1B9E5 /* FirebaseCore in Frameworks */,
+				2FFA08782F8456B100FBFAD9 /* FirebaseFunctions in Frameworks */,
 				2F1B1F352F82DC1800A1B9E5 /* WebRTC in Frameworks */,
 				2F1B1F462F82E1B500A1B9E5 /* FirebaseFirestore in Frameworks */,
 				2F1B1F532F82E6E300A1B9E5 /* GoogleSignInSwift in Frameworks */,
@@ -71,6 +75,7 @@
 			isa = PBXGroup;
 			children = (
 				2F1B1EF82F82D32300A1B9E5 /* Caller */,
+				2FFA08742F84541400FBFAD9 /* Frameworks */,
 				2F1B1EF72F82D32300A1B9E5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -81,6 +86,13 @@
 				2F1B1EF62F82D32300A1B9E5 /* Caller.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2FFA08742F84541400FBFAD9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -114,6 +126,8 @@
 				2F1B1F492F82E1B500A1B9E5 /* FirebaseMessaging */,
 				2F1B1F502F82E6E300A1B9E5 /* GoogleSignIn */,
 				2F1B1F522F82E6E300A1B9E5 /* GoogleSignInSwift */,
+				2FFA08752F84541400FBFAD9 /* FirebaseStorage */,
+				2FFA08772F8456B100FBFAD9 /* FirebaseFunctions */,
 			);
 			productName = Caller;
 			productReference = 2F1B1EF62F82D32300A1B9E5 /* Caller.app */;
@@ -300,6 +314,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Caller/Caller.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -346,6 +361,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Caller/Caller.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -492,6 +508,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2F1B1F4F2F82E6E300A1B9E5 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		2FFA08752F84541400FBFAD9 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2F1B1F3A2F82E1B500A1B9E5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+		2FFA08772F8456B100FBFAD9 /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2F1B1F3A2F82E1B500A1B9E5 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

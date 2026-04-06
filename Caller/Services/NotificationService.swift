@@ -1,59 +1,100 @@
+import FirebaseCore
+import FirebaseFirestore
+import FirebaseMessaging
 import Foundation
+import UIKit
 import UserNotifications
 
 protocol NotificationServicing {
     func configure()
     func requestAuthorization() async
-    func notifyIncomingMessage(from senderName: String, message: String)
-    func notifyIncomingCall(from callerName: String, type: CallType)
+    func updateCurrentUser(_ user: AppUser?) async
 }
 
 final class NotificationService: NSObject, NotificationServicing {
+    static let shared = NotificationService()
+
     private let center = UNUserNotificationCenter.current()
+    private let logger = Logger()
+    private var currentUserID: String?
+    private var fcmToken: String?
+
+    private override init() {}
 
     func configure() {
         center.delegate = self
+        Messaging.messaging().delegate = self
     }
 
     func requestAuthorization() async {
         do {
-            _ = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+            let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+            guard granted else { return }
+            await MainActor.run {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
         } catch {
             print("[ERROR] Notification authorization failed: \(error.localizedDescription)")
         }
     }
 
-    func notifyIncomingMessage(from senderName: String, message: String) {
-        scheduleNotification(
-            identifier: "message-\(UUID().uuidString)",
-            title: senderName,
-            body: message.isEmpty ? "Новое сообщение" : message,
-            sound: .default
-        )
+    func updateCurrentUser(_ user: AppUser?) async {
+        let previousUserID = currentUserID
+        currentUserID = user?.id
+        guard user != nil else {
+            await removeFCMToken(for: previousUserID)
+            return
+        }
+        await syncPushTokenIfPossible()
     }
 
-    func notifyIncomingCall(from callerName: String, type: CallType) {
-        scheduleNotification(
-            identifier: "call-\(UUID().uuidString)",
-            title: callerName,
-            body: type == .video ? "Видеозвонок" : "Аудиозвонок",
-            sound: .default
-        )
+    func registerDeviceToken(_ deviceToken: Data) {
+        Messaging.messaging().apnsToken = deviceToken
     }
 
-    private func scheduleNotification(identifier: String, title: String, body: String, sound: UNNotificationSound?) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = sound
+    func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) {
+        logger.info("Received remote notification payload: \(userInfo)")
+    }
 
-        let request = UNNotificationRequest(
-            identifier: identifier,
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        )
+    private func updateFCMToken(_ token: String) {
+        fcmToken = token
+        Task {
+            await syncPushTokenIfPossible()
+        }
+    }
 
-        center.add(request)
+    private func syncPushTokenIfPossible() async {
+        guard FirebaseApp.app() != nil,
+              let currentUserID,
+              let fcmToken,
+              !fcmToken.isEmpty else {
+            return
+        }
+
+        do {
+            try await Firestore.firestore().collection("users").document(currentUserID).setData([
+                "fcmToken": fcmToken,
+                "fcmUpdatedAt": Timestamp(date: .now)
+            ], merge: true)
+        } catch {
+            logger.error("Failed to sync FCM token: \(error.localizedDescription)")
+        }
+    }
+
+    private func removeFCMToken(for userID: String?) async {
+        guard FirebaseApp.app() != nil,
+              let userID else {
+            return
+        }
+
+        do {
+            try await Firestore.firestore().collection("users").document(userID).updateData([
+                "fcmToken": FieldValue.delete(),
+                "fcmUpdatedAt": FieldValue.delete()
+            ])
+        } catch {
+            logger.error("Failed to remove FCM token: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -64,5 +105,47 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound, .badge])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        handleRemoteNotification(response.notification.request.content.userInfo)
+        completionHandler()
+    }
+}
+
+extension NotificationService: MessagingDelegate {
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        guard let fcmToken else { return }
+        logger.info("FCM token received.")
+        updateFCMToken(fcmToken)
+    }
+}
+
+final class NotificationAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        NotificationService.shared.registerDeviceToken(deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        Logger().error("APNs registration failed: \(error.localizedDescription)")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        NotificationService.shared.handleRemoteNotification(userInfo)
+        completionHandler(.newData)
     }
 }

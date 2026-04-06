@@ -117,7 +117,7 @@ final class AppEnvironment {
     }
 
     private static func makeNotificationService() -> NotificationServicing {
-        let service = NotificationService()
+        let service = NotificationService.shared
         service.configure()
         return service
     }

@@ -138,14 +138,7 @@ struct ChatView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                    )
-            )
+            .callerGlassCard(cornerRadius: 22, tint: .cyan)
             
             Button {
                 Task { await viewModel.sendMessage() }
@@ -154,11 +147,11 @@ struct ChatView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 46, height: 46)
-                    .background(
-                        viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? Color.gray.opacity(0.35)
-                        : Color.blue,
-                        in: Circle()
+                    .callerGlassButtonSurface(
+                        cornerRadius: 999,
+                        tint: viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? .gray
+                        : .blue
                     )
             }
             .disabled(viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

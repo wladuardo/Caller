@@ -7,18 +7,32 @@ struct IncomingCallView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.88)
+            LinearGradient(
+                colors: [Color.black, Color(red: 0.06, green: 0.10, blue: 0.18)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
                 .ignoresSafeArea()
 
             VStack(spacing: 24) {
                 Spacer()
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 110))
-                    .foregroundStyle(.white, .blue)
-                Text(call.participant.name)
-                    .font(.largeTitle.bold())
-                Text(call.type == .video ? "Видеозвонок" : "Аудиозвонок")
-                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 18) {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 110))
+                        .foregroundStyle(.white, .blue)
+
+                    VStack(spacing: 8) {
+                        Text(call.participant.name)
+                            .font(.largeTitle.bold())
+                            .foregroundStyle(.white)
+                        Text(call.type == .video ? "Видеозвонок" : "Аудиозвонок")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(28)
+                .callerGlassCard(cornerRadius: 30, tint: call.type == .video ? .blue : .green)
 
                 Spacer()
 

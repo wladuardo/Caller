@@ -43,12 +43,6 @@ struct UnreadMessageSummary: Identifiable, Equatable {
     let latestSentAt: Date
 }
 
-struct ChatBanner: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let message: String
-}
-
 enum ChatConversation {
     static func id(for firstUserID: String, and secondUserID: String) -> String {
         [firstUserID, secondUserID]

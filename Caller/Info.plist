@@ -17,7 +17,14 @@
 		<string>Caller uses the microphone for audio and video calls.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>Caller uses the camera for video calls and live preview.</string>
+		<key>FirebaseAppDelegateProxyEnabled</key>
+		<false/>
 		<key>SignalingServerURL</key>
 		<string></string>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+			<string>voip</string>
+		</array>
 	</dict>
-	</plist>
+		</plist>

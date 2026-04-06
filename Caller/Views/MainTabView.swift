@@ -14,6 +14,9 @@ struct MainTabView: View {
             if let currentUser = viewModel.currentUser {
                 SettingsView(
                     currentUser: currentUser,
+                    onUpdateAvatar: { imageData in
+                        await viewModel.updateAvatar(imageData: imageData)
+                    },
                     onSignOut: {
                         Task { await viewModel.signOut() }
                     },

@@ -1,4 +1,5 @@
 import AVFoundation
+import CallKit
 import Combine
 import CoreMedia
 import Foundation
@@ -19,6 +20,9 @@ protocol CallServicing: AnyObject {
     func toggleCamera()
     func switchCamera()
     func connect(currentUser: AppUser) async
+    func prepareIncomingCall(from payload: VoIPIncomingCallPayload)
+    func answerIncomingCallIfPossible(callID: UUID, currentUser: AppUser) async
+    func endCall(callID: UUID, currentUser: AppUser) async
 }
 
 final class WebRTCCallService: NSObject, CallServicing {
@@ -42,6 +46,7 @@ final class WebRTCCallService: NSObject, CallServicing {
     private var videoCapturer: RTCCameraVideoCapturer?
     private var signalingTask: Task<Void, Never>?
     private var pendingIncomingOffer: RTCSessionDescription?
+    private var pendingAcceptedCallID: UUID?
 
     var activeCallPublisher: AnyPublisher<CallSession?, Never> { activeCallSubject.eraseToAnyPublisher() }
     var incomingCallPublisher: AnyPublisher<CallSession?, Never> { incomingCallSubject.eraseToAnyPublisher() }
@@ -76,6 +81,26 @@ final class WebRTCCallService: NSObject, CallServicing {
         } catch {
             errorSubject.send(.signalingUnavailable)
         }
+    }
+
+    func prepareIncomingCall(from payload: VoIPIncomingCallPayload) {
+        let session = CallSession(
+            id: payload.callID,
+            participant: CallParticipant(
+                id: payload.callerID,
+                name: payload.callerName,
+                email: payload.callerEmail
+            ),
+            direction: .incoming,
+            type: payload.type,
+            status: .ringing,
+            isMuted: false,
+            isSpeakerEnabled: payload.type == .video,
+            isCameraEnabled: payload.type == .video,
+            isUsingFrontCamera: true,
+            startedAt: nil
+        )
+        incomingCallSubject.send(session)
     }
 
     func startCall(with user: AppUser, type: CallType, currentUser: AppUser) async {
@@ -160,18 +185,41 @@ final class WebRTCCallService: NSObject, CallServicing {
             )
         } catch let error as CallError {
             errorSubject.send(error)
+            if let incomingCallID = incomingCallSubject.value?.id {
+                SystemCallService.shared.reportCallEnded(incomingCallID, reason: .failed)
+            }
             teardownMedia()
         } catch {
             logger.error("Failed to accept call: \(error.localizedDescription)")
             errorSubject.send(.general("Unable to accept the call."))
+            if let incomingCallID = incomingCallSubject.value?.id {
+                SystemCallService.shared.reportCallEnded(incomingCallID, reason: .failed)
+            }
             teardownMedia()
         }
+    }
+
+    func answerIncomingCallIfPossible(callID: UUID, currentUser: AppUser) async {
+        guard incomingCallSubject.value?.id == callID else {
+            pendingAcceptedCallID = callID
+            return
+        }
+
+        guard pendingIncomingOffer != nil else {
+            pendingAcceptedCallID = callID
+            return
+        }
+
+        pendingAcceptedCallID = nil
+        await acceptIncomingCall(currentUser: currentUser)
     }
 
     func declineIncomingCall(currentUser: AppUser) async {
         guard let incoming = incomingCallSubject.value else { return }
         incomingCallSubject.send(nil)
         pendingIncomingOffer = nil
+        pendingAcceptedCallID = nil
+        SystemCallService.shared.reportCallEnded(incoming.id, reason: .declinedElsewhere)
 
         do {
             try await signalingService.send(
@@ -189,6 +237,8 @@ final class WebRTCCallService: NSObject, CallServicing {
     }
 
     func endCall(currentUser: AppUser) async {
+        let endedCallID = activeCallSubject.value?.id
+
         if let activeCall = activeCallSubject.value {
             do {
                 try await signalingService.send(
@@ -211,8 +261,25 @@ final class WebRTCCallService: NSObject, CallServicing {
         }
 
         teardownMedia()
+        if let endedCallID {
+            SystemCallService.shared.reportCallEnded(endedCallID, reason: .remoteEnded)
+        }
         activeCallSubject.send(nil)
         incomingCallSubject.send(nil)
+    }
+
+    func endCall(callID: UUID, currentUser: AppUser) async {
+        if incomingCallSubject.value?.id == callID {
+            await declineIncomingCall(currentUser: currentUser)
+            return
+        }
+
+        if activeCallSubject.value?.id == callID {
+            await endCall(currentUser: currentUser)
+            return
+        }
+
+        SystemCallService.shared.reportCallEnded(callID, reason: .remoteEnded)
     }
 
     func toggleMute() {
@@ -270,21 +337,26 @@ final class WebRTCCallService: NSObject, CallServicing {
         case .offer(let sdp, let type):
             pendingIncomingOffer = RTCSessionDescription(type: .offer, sdp: sdp)
             let participant = await resolveParticipant(for: message.fromUserID)
-
-            incomingCallSubject.send(
-                CallSession(
-                    id: message.callID,
-                    participant: participant,
-                    direction: .incoming,
-                    type: type,
-                    status: .ringing,
-                    isMuted: false,
-                    isSpeakerEnabled: type == .video,
-                    isCameraEnabled: type == .video,
-                    isUsingFrontCamera: true,
-                    startedAt: nil
-                )
+            let session = CallSession(
+                id: message.callID,
+                participant: participant,
+                direction: .incoming,
+                type: type,
+                status: .ringing,
+                isMuted: false,
+                isSpeakerEnabled: type == .video,
+                isCameraEnabled: type == .video,
+                isUsingFrontCamera: true,
+                startedAt: nil
             )
+            incomingCallSubject.send(session)
+
+            if pendingAcceptedCallID == message.callID, let currentUser {
+                pendingAcceptedCallID = nil
+                Task { [weak self] in
+                    await self?.acceptIncomingCall(currentUser: currentUser)
+                }
+            }
         case .answer(let sdp):
             guard let peerConnection else { return }
 
@@ -314,6 +386,7 @@ final class WebRTCCallService: NSObject, CallServicing {
                 logger.error("Failed to add ICE candidate: \(error.localizedDescription)")
             }
         case .hangup:
+            let endedCallID = activeCallSubject.value?.id ?? incomingCallSubject.value?.id
             if var activeCall = activeCallSubject.value {
                 activeCall.status = .ended
                 activeCallSubject.send(activeCall)
@@ -321,6 +394,9 @@ final class WebRTCCallService: NSObject, CallServicing {
             teardownMedia()
             activeCallSubject.send(nil)
             incomingCallSubject.send(nil)
+            if let endedCallID {
+                SystemCallService.shared.reportCallEnded(endedCallID, reason: .remoteEnded)
+            }
         }
     }
 
@@ -406,6 +482,7 @@ final class WebRTCCallService: NSObject, CallServicing {
 
     private func teardownMedia() {
         pendingIncomingOffer = nil
+        pendingAcceptedCallID = nil
         peerConnection?.close()
         peerConnection = nil
         videoCapturer?.stopCapture()
@@ -638,13 +715,22 @@ extension WebRTCCallService: RTCPeerConnectionDelegate {
                 $0.status = .connected
                 $0.startedAt = $0.startedAt ?? .now
             }
+            if let callID = activeCallSubject.value?.id {
+                SystemCallService.shared.reportCallConnected(callID)
+            }
         case .connecting:
             updateActiveCall { $0.status = .connecting }
         case .disconnected, .failed:
             updateActiveCall { $0.status = .failed }
             errorSubject.send(.transportFailure)
+            if let callID = activeCallSubject.value?.id {
+                SystemCallService.shared.reportCallEnded(callID, reason: .failed)
+            }
         case .closed:
             updateActiveCall { $0.status = .ended }
+            if let callID = activeCallSubject.value?.id {
+                SystemCallService.shared.reportCallEnded(callID, reason: .remoteEnded)
+            }
         case .new:
             break
         @unknown default:

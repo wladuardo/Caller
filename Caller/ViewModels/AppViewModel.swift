@@ -4,6 +4,12 @@ import WebRTC
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    enum UsernameSaveResult {
+        case success
+        case inlineError(String)
+        case alertError
+    }
+
     @Published private(set) var currentUser: AppUser?
     @Published private(set) var contacts: [AppUser] = []
     @Published private(set) var incomingFriendRequests: [FriendRequest] = []
@@ -13,7 +19,6 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var localVideoTrack: RTCVideoTrack?
     @Published private(set) var remoteVideoTrack: RTCVideoTrack?
     @Published private(set) var unreadMessageCounts: [String: Int] = [:]
-    @Published var chatBanner: ChatBanner?
     @Published var callError: CallError?
     @Published var isLoading = false
     @Published private(set) var isRestoringSession = false
@@ -25,9 +30,11 @@ final class AppViewModel: ObservableObject {
 
     private let environment: AppEnvironment
     private var subscriptions = Set<AnyCancellable>()
+    private var contactsObservationTask: Task<Void, Never>?
     private var conversationObservationTasks: [String: Task<Void, Never>] = [:]
     private var incomingRequestsObservationTask: Task<Void, Never>?
     private var outgoingRequestsObservationTask: Task<Void, Never>?
+    private var systemCallEventsTask: Task<Void, Never>?
     private var previousUnreadMessageCounts: [String: Int] = [:]
     private var activeChatUserID: String?
     private var initializedUnreadUsers = Set<String>()
@@ -36,6 +43,7 @@ final class AppViewModel: ObservableObject {
     init(environment: AppEnvironment) {
         self.environment = environment
         bind()
+        observeSystemCallEvents()
         restoreSessionIfNeeded()
     }
 
@@ -79,6 +87,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func signOut() async {
+        await environment.notificationService.updateCurrentUser(nil)
+        await SystemCallService.shared.updateCurrentUser(nil)
         await environment.authService.signOut()
         environment.signalingService.disconnect()
         resetSessionState()
@@ -87,6 +97,8 @@ final class AppViewModel: ObservableObject {
     func deleteAccount() async {
         do {
             try await environment.authService.deleteAccount()
+            await environment.notificationService.updateCurrentUser(nil)
+            await SystemCallService.shared.updateCurrentUser(nil)
             environment.signalingService.disconnect()
             resetSessionState()
         } catch {
@@ -104,12 +116,13 @@ final class AppViewModel: ObservableObject {
         localVideoTrack = nil
         remoteVideoTrack = nil
         unreadMessageCounts = [:]
-        chatBanner = nil
         previousUnreadMessageCounts = [:]
         initializedUnreadUsers = []
         activeChatUserID = nil
         notifiedIncomingCallID = nil
         isRestoringSession = false
+        contactsObservationTask?.cancel()
+        contactsObservationTask = nil
         incomingRequestsObservationTask?.cancel()
         incomingRequestsObservationTask = nil
         outgoingRequestsObservationTask?.cancel()
@@ -222,10 +235,6 @@ final class AppViewModel: ObservableObject {
         callError = nil
     }
 
-    func dismissChatBanner() {
-        chatBanner = nil
-    }
-
     func makeChatViewModel(for user: AppUser) -> ChatViewModel? {
         guard let currentUser else { return nil }
         return ChatViewModel(
@@ -244,19 +253,29 @@ final class AppViewModel: ObservableObject {
         )
     }
 
-    func saveUsername(_ username: String) async -> Bool {
-        guard let currentUser else { return false }
+    func saveUsername(_ username: String) async -> UsernameSaveResult {
+        guard let currentUser else { return .alertError }
 
         do {
             let updatedUser = try await environment.contactService.updateUsername(username, for: currentUser)
             self.currentUser = updatedUser
             await loadSocialData()
-            return true
+            return .success
+        } catch let error as ContactServiceError {
+            switch error {
+            case .usernameTaken:
+                return .inlineError(error.localizedDescription)
+            case .usernameUpdateFailed:
+                callError = .general(error.localizedDescription)
+                return .alertError
+            case .avatarUploadUnavailable:
+                callError = .general(error.localizedDescription)
+                return .alertError
+            }
         } catch {
             callError = .general(error.localizedDescription)
+            return .alertError
         }
-
-        return false
     }
 
     func searchUser(by username: String) async -> AppUser? {
@@ -268,12 +287,27 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    func updateAvatar(imageData: Data) async {
+        guard let currentUser else { return }
+
+        do {
+            let updatedUser = try await environment.contactService.updateAvatar(imageData: imageData, for: currentUser)
+            self.currentUser = updatedUser
+        } catch {
+            callError = .general(error.localizedDescription)
+        }
+    }
+
     private func bootstrapSession() async {
         isRestoringSession = true
         defer { isRestoringSession = false }
+        observeSystemCallEvents()
         await synchronizeCurrentUserProfile()
         guard let currentUser else { return }
+        await environment.notificationService.updateCurrentUser(currentUser)
+        await SystemCallService.shared.updateCurrentUser(currentUser)
         await environment.callService.connect(currentUser: currentUser)
+        observeContacts(currentUser: currentUser)
         observeIncomingFriendRequests()
         observeOutgoingFriendRequests()
         guard !requiresUsernameSetup else { return }
@@ -312,48 +346,10 @@ final class AppViewModel: ObservableObject {
     }
 
     private func handleUnreadCountUpdate(_ unreadCount: Int, latestMessage: ChatMessage?, for user: AppUser) {
-        let previousUnreadCount = previousUnreadMessageCounts[user.id] ?? 0
-        let shouldNotify = initializedUnreadUsers.contains(user.id) &&
-            unreadCount > previousUnreadCount &&
-            latestMessage?.senderID == user.id &&
-            activeChatUserID != user.id
-
+        _ = latestMessage
         unreadMessageCounts[user.id] = unreadCount
         previousUnreadMessageCounts[user.id] = unreadCount
         initializedUnreadUsers.insert(user.id)
-
-        if shouldNotify {
-            let messageText = latestMessage?.text ?? "New message"
-            environment.notificationService.notifyIncomingMessage(
-                from: user.displayName,
-                message: messageText
-            )
-            presentChatBanner(
-                title: user.displayName,
-                message: messageText
-            )
-        }
-    }
-
-    private func userDisplayName(for userID: String) -> String {
-        if let user = contacts.first(where: { $0.id == userID }) {
-            return user.displayName
-        }
-        if let request = incomingFriendRequests.first(where: { $0.fromUser.id == userID }) {
-            return request.fromUser.displayName
-        }
-        return "New Message"
-    }
-
-    private func presentChatBanner(title: String, message: String) {
-        let banner = ChatBanner(title: title, message: message)
-        chatBanner = banner
-
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            guard self?.chatBanner?.id == banner.id else { return }
-            self?.chatBanner = nil
-        }
     }
 
     private func bind() {
@@ -375,10 +371,6 @@ final class AppViewModel: ObservableObject {
 
                 guard self.notifiedIncomingCallID != call.id else { return }
                 self.notifiedIncomingCallID = call.id
-                self.environment.notificationService.notifyIncomingCall(
-                    from: call.participant.name,
-                    type: call.type
-                )
             }
             .store(in: &subscriptions)
 
@@ -399,6 +391,35 @@ final class AppViewModel: ObservableObject {
             .store(in: &subscriptions)
     }
 
+    private func observeSystemCallEvents() {
+        systemCallEventsTask?.cancel()
+        systemCallEventsTask = Task { [weak self] in
+            guard let self else { return }
+
+            for await event in SystemCallService.shared.events {
+                if Task.isCancelled {
+                    break
+                }
+
+                await handleSystemCallEvent(event)
+            }
+        }
+    }
+
+    @MainActor
+    private func handleSystemCallEvent(_ event: SystemCallEvent) async {
+        switch event {
+        case .incomingPush(let payload):
+            environment.callService.prepareIncomingCall(from: payload)
+        case .answerRequested(let callID):
+            guard let currentUser else { return }
+            await environment.callService.answerIncomingCallIfPossible(callID: callID, currentUser: currentUser)
+        case .endRequested(let callID):
+            guard let currentUser else { return }
+            await environment.callService.endCall(callID: callID, currentUser: currentUser)
+        }
+    }
+
     private func restoreSessionIfNeeded() {
         guard let user = environment.authService.currentUser else { return }
         currentUser = user
@@ -413,6 +434,22 @@ final class AppViewModel: ObservableObject {
         await loadContacts()
         await loadFriendRequests()
         await loadOutgoingFriendRequests()
+    }
+
+    private func observeContacts(currentUser: AppUser) {
+        contactsObservationTask?.cancel()
+        contactsObservationTask = Task { [weak self] in
+            guard let self else { return }
+
+            for await contacts in environment.contactService.observeContacts() {
+                if Task.isCancelled {
+                    break
+                }
+
+                self.contacts = contacts
+                observeUnreadCounts(for: contacts, currentUser: currentUser)
+            }
+        }
     }
 
     private func observeIncomingFriendRequests() {

@@ -1,10 +1,16 @@
 import FirebaseFirestore
 import Foundation
+#if canImport(FirebaseStorage)
+import FirebaseStorage
+#endif
+import UIKit
 
 protocol ContactServicing {
     func fetchContacts() async throws -> [AppUser]
+    func observeContacts() -> AsyncStream<[AppUser]>
     func fetchUser(id: String) async throws -> AppUser?
     func updateUsername(_ username: String, for user: AppUser) async throws -> AppUser
+    func updateAvatar(imageData: Data, for user: AppUser) async throws -> AppUser
     func searchUser(username: String) async throws -> AppUser?
 }
 
@@ -35,13 +41,36 @@ struct MockContactService: ContactServicing {
         try await fetchContacts().first { $0.id == id }
     }
 
+    func observeContacts() -> AsyncStream<[AppUser]> {
+        AsyncStream { continuation in
+            Task {
+                let contacts = (try? await fetchContacts()) ?? []
+                continuation.yield(contacts)
+                continuation.finish()
+            }
+        }
+    }
+
     func updateUsername(_ username: String, for user: AppUser) async throws -> AppUser {
         AppUser(
             id: user.id,
             displayName: user.displayName,
             email: user.email,
             avatarSystemName: user.avatarSystemName,
+            avatarURL: user.avatarURL,
             username: username
+        )
+    }
+
+    func updateAvatar(imageData: Data, for user: AppUser) async throws -> AppUser {
+        _ = imageData
+        return AppUser(
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            avatarSystemName: user.avatarSystemName,
+            avatarURL: user.avatarURL,
+            username: user.username
         )
     }
 
@@ -130,25 +159,40 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             .order(by: "displayName")
             .getDocuments()
 
-        return snapshot.documents.compactMap { document in
-            let id = (document["id"] as? String) ?? document.documentID
+        return makeContacts(from: snapshot.documents, currentUserID: currentUserID)
+    }
 
-            guard let displayName = document["displayName"] as? String,
-                  let email = document["email"] as? String else {
-                return nil
+    func observeContacts() -> AsyncStream<[AppUser]> {
+        guard let currentUserID = currentUserProvider()?.id else {
+            return AsyncStream { continuation in
+                continuation.yield([])
+                continuation.finish()
             }
+        }
 
-            if id == currentUserID {
-                return nil
+        return AsyncStream { continuation in
+            let listener = db
+                .collection("users")
+                .document(currentUserID)
+                .collection("friends")
+                .order(by: "displayName")
+                .addSnapshotListener { snapshot, error in
+                    if error != nil {
+                        continuation.yield([])
+                        return
+                    }
+
+                    guard let documents = snapshot?.documents else {
+                        continuation.yield([])
+                        return
+                    }
+
+                    continuation.yield(self.makeContacts(from: documents, currentUserID: currentUserID))
+                }
+
+            continuation.onTermination = { _ in
+                listener.remove()
             }
-
-            return AppUser(
-                id: id,
-                displayName: displayName,
-                email: email,
-                avatarSystemName: document["avatarSystemName"] as? String ?? "person.crop.circle.fill",
-                username: document["username"] as? String
-            )
         }
     }
 
@@ -166,6 +210,7 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             displayName: displayName,
             email: email,
             avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
+            avatarURL: data["avatarURL"] as? String,
             username: data["username"] as? String
         )
     }
@@ -342,7 +387,7 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                 "updatedAt": Timestamp(date: .now)
             ], forDocument: usernameRef)
 
-            transaction.setData([
+            var userPayload: [String: Any] = [
                 "id": user.id,
                 "displayName": user.displayName,
                 "email": user.email,
@@ -350,7 +395,15 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                 "username": username,
                 "usernameLowercased": normalizedUsername,
                 "updatedAt": Timestamp(date: .now)
-            ], forDocument: usersRef, merge: true)
+            ]
+
+            if let avatarURL = user.avatarURL, !avatarURL.isEmpty {
+                userPayload["avatarURL"] = avatarURL
+            } else {
+                userPayload["avatarURL"] = FieldValue.delete()
+            }
+
+            transaction.setData(userPayload, forDocument: usersRef, merge: true)
 
             return true
         }
@@ -363,8 +416,44 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             displayName: user.displayName,
             email: user.email,
             avatarSystemName: user.avatarSystemName,
+            avatarURL: user.avatarURL,
             username: username
         )
+    }
+
+    func updateAvatar(imageData: Data, for user: AppUser) async throws -> AppUser {
+#if canImport(FirebaseStorage)
+        let normalizedData = normalizedImageData(from: imageData)
+        let storageRef = Storage.storage().reference().child("avatars/\(user.id)/\(UUID().uuidString).jpg")
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+
+        _ = try await storageRef.putDataAsync(normalizedData, metadata: metadata)
+        let downloadURL = try await storageRef.downloadURL()
+
+        let updatedUser = AppUser(
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            avatarSystemName: user.avatarSystemName,
+            avatarURL: downloadURL.absoluteString,
+            username: user.username
+        )
+
+        let usersRef = db.collection("users").document(user.id)
+        try await usersRef.setData([
+            "avatarURL": downloadURL.absoluteString,
+            "updatedAt": Timestamp(date: .now)
+        ], merge: true)
+
+        let friendsSnapshot = try await usersRef.collection("friends").getDocuments()
+        try await propagateAvatarUpdate(updatedUser, friendIDs: friendsSnapshot.documents.map(\.documentID))
+
+        return updatedUser
+#else
+        _ = imageData
+        throw ContactServiceError.avatarUploadUnavailable
+#endif
     }
 
     func searchUser(username: String) async throws -> AppUser? {
@@ -401,6 +490,7 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             displayName: displayName,
             email: email,
             avatarSystemName: userData["avatarSystemName"] as? String ?? "person.crop.circle.fill",
+            avatarURL: userData["avatarURL"] as? String,
             username: userData["username"] as? String
         )
     }
@@ -517,6 +607,10 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             "acceptedAt": acceptedAt
         ]
 
+        if let avatarURL = user.avatarURL, !avatarURL.isEmpty {
+            payload["avatarURL"] = avatarURL
+        }
+
         if let username = user.username, !username.isEmpty {
             payload["username"] = username
         }
@@ -545,6 +639,7 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                         displayName: displayName,
                         email: email,
                         avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
+                        avatarURL: data["avatarURL"] as? String,
                         username: data["username"] as? String
                     ),
                     sentAt: (document["sentAt"] as? Timestamp)?.dateValue() ?? .now
@@ -553,6 +648,27 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
         }
 
         return requests
+    }
+
+    private func makeContacts(from documents: [QueryDocumentSnapshot], currentUserID: String) -> [AppUser] {
+        documents.compactMap { document in
+            let id = (document["id"] as? String) ?? document.documentID
+
+            guard let displayName = document["displayName"] as? String,
+                  let email = document["email"] as? String,
+                  id != currentUserID else {
+                return nil
+            }
+
+            return AppUser(
+                id: id,
+                displayName: displayName,
+                email: email,
+                avatarSystemName: document["avatarSystemName"] as? String ?? "person.crop.circle.fill",
+                avatarURL: document["avatarURL"] as? String,
+                username: document["username"] as? String
+            )
+        }
     }
 
     private func makeOutgoingFriendRequests(from documents: [QueryDocumentSnapshot]) async -> [OutgoingFriendRequest] {
@@ -576,6 +692,7 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                         displayName: displayName,
                         email: email,
                         avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
+                        avatarURL: data["avatarURL"] as? String,
                         username: data["username"] as? String
                     ),
                     sentAt: (document["sentAt"] as? Timestamp)?.dateValue() ?? .now
@@ -585,11 +702,75 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
 
         return requests
     }
+
+    private func propagateAvatarUpdate(_ user: AppUser, friendIDs: [String]) async throws {
+        guard !friendIDs.isEmpty else { return }
+
+        for chunkStart in stride(from: 0, to: friendIDs.count, by: 400) {
+            let batch = db.batch()
+            let chunkEnd = min(chunkStart + 400, friendIDs.count)
+            for friendID in friendIDs[chunkStart..<chunkEnd] {
+                let friendRef = db
+                    .collection("users")
+                    .document(friendID)
+                    .collection("friends")
+                    .document(user.id)
+                var payload: [String: Any] = [
+                    "updatedAt": Timestamp(date: .now)
+                ]
+                if let avatarURL = user.avatarURL, !avatarURL.isEmpty {
+                    payload["avatarURL"] = avatarURL
+                } else {
+                    payload["avatarURL"] = FieldValue.delete()
+                }
+                batch.setData(payload, forDocument: friendRef, merge: true)
+            }
+            try await batch.commit()
+        }
+    }
+
+    private func normalizedImageData(from imageData: Data) -> Data {
+        let maxUploadBytes = 4_500_000
+
+        guard let image = UIImage(data: imageData) else {
+            return imageData
+        }
+
+        let preparedImage = resizedImageIfNeeded(image, maxDimension: 1_600) ?? image
+        let compressionQualities: [CGFloat] = [0.82, 0.7, 0.58, 0.46, 0.34, 0.24]
+
+        for quality in compressionQualities {
+            if let jpegData = preparedImage.jpegData(compressionQuality: quality),
+               jpegData.count <= maxUploadBytes {
+                return jpegData
+            }
+        }
+
+        return preparedImage.jpegData(compressionQuality: 0.2) ?? imageData
+    }
+
+    private func resizedImageIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage? {
+        let size = image.size
+        let largestSide = max(size.width, size.height)
+
+        guard largestSide > maxDimension else {
+            return image
+        }
+
+        let scale = maxDimension / largestSide
+        let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
 }
 
 enum ContactServiceError: LocalizedError {
     case usernameTaken
     case usernameUpdateFailed
+    case avatarUploadUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -597,6 +778,8 @@ enum ContactServiceError: LocalizedError {
             return "Этот никнейм уже занят."
         case .usernameUpdateFailed:
             return "Не удалось сохранить никнейм."
+        case .avatarUploadUnavailable:
+            return "Загрузка аватара недоступна. Добавьте Firebase Storage в проект."
         }
     }
 }

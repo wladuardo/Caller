@@ -10,11 +10,14 @@ import SwiftUI
 
 @main
 struct CallerApp: App {
-    private let notificationService = NotificationService()
+    @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var appDelegate
+    private let notificationService = NotificationService.shared
+    private let systemCallService = SystemCallService.shared
 
     init() {
         FirebaseBootstrapper.configureIfPossible()
         notificationService.configure()
+        systemCallService.configure()
     }
 
     var body: some Scene {

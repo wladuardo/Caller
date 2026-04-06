@@ -26,7 +26,7 @@ struct ActiveCallView: View {
                 if call.type == .video {
                     ZStack(alignment: .topTrailing) {
                         RoundedRectangle(cornerRadius: 32)
-                            .fill(Color.white.opacity(0.08))
+                            .fill(Color.white.opacity(0.04))
                             .overlay {
                                 if let remoteVideoTrack {
                                     WebRTCVideoView(track: remoteVideoTrack)
@@ -43,6 +43,7 @@ struct ActiveCallView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, maxHeight: 360)
+                            .callerGlassCard(cornerRadius: 32, tint: .blue)
 
                         if let localVideoTrack, call.isCameraEnabled {
                             WebRTCVideoView(track: localVideoTrack, mirror: call.isUsingFrontCamera)

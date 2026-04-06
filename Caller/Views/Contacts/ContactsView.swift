@@ -172,11 +172,7 @@ struct ContactsView: View {
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
+                .callerGlassButtonSurface(cornerRadius: 999, tint: .blue)
                 .shadow(color: .black.opacity(0.2), radius: 12, y: 8)
         }
         .buttonStyle(.plain)
@@ -199,7 +195,7 @@ struct ContactsView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+            .callerGlassCard(cornerRadius: 18, tint: .cyan)
     }
 
     private func statPill(title: String, value: String) -> some View {
@@ -212,6 +208,6 @@ struct ContactsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .callerGlassCard(cornerRadius: 16, tint: .cyan)
     }
 }

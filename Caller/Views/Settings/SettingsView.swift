@@ -1,9 +1,14 @@
+import PhotosUI
 import SwiftUI
 
 struct SettingsView: View {
     let currentUser: AppUser
+    let onUpdateAvatar: (Data) async -> Void
     let onSignOut: () -> Void
     let onDeleteAccount: () -> Void
+
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var isUploadingAvatar = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +32,10 @@ struct SettingsView: View {
             .navigationTitle("Настройки")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onChange(of: selectedPhoto) { _, newValue in
+            guard let newValue else { return }
+            uploadAvatar(from: newValue)
+        }
     }
 
     private var header: some View {
@@ -42,11 +51,32 @@ struct SettingsView: View {
 
     private var profileCard: some View {
         HStack(spacing: 16) {
-            Image(systemName: currentUser.avatarSystemName)
-                .font(.system(size: 42))
-                .foregroundStyle(.white, .blue)
-                .frame(width: 72, height: 72)
-                .background(Color.white.opacity(0.08), in: Circle())
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                ZStack(alignment: .bottomTrailing) {
+                    UserAvatarView(
+                        user: currentUser,
+                        size: 72,
+                        iconSize: 42,
+                        iconTint: .white
+                    )
+
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 24, height: 24)
+                        .overlay {
+                            if isUploadingAvatar {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "camera.fill")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                }
+            }
+            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(currentUser.displayName)
@@ -69,14 +99,7 @@ struct SettingsView: View {
             Spacer()
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .callerGlassCard(cornerRadius: 24, tint: .cyan)
     }
 
     private var actionsCard: some View {
@@ -98,14 +121,26 @@ struct SettingsView: View {
             )
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .callerGlassCard(cornerRadius: 24, tint: .blue)
+    }
+
+    private func uploadAvatar(from item: PhotosPickerItem) {
+        isUploadingAvatar = true
+
+        Task {
+            defer {
+                Task { @MainActor in
+                    isUploadingAvatar = false
+                    selectedPhoto = nil
+                }
+            }
+
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                return
+            }
+
+            await onUpdateAvatar(data)
+        }
     }
 }
 
@@ -123,7 +158,7 @@ private struct SettingsActionButton: View {
                     .font(.headline)
                     .foregroundStyle(.white)
                     .frame(width: 42, height: 42)
-                    .background(tint.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .callerGlassButtonSurface(cornerRadius: 14, tint: tint)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -138,7 +173,7 @@ private struct SettingsActionButton: View {
                 Spacer()
             }
             .padding(14)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .callerGlassCard(cornerRadius: 18, tint: tint)
         }
         .buttonStyle(.plain)
     }
@@ -147,6 +182,7 @@ private struct SettingsActionButton: View {
 #Preview {
     SettingsView(
         currentUser: AppUser(id: "me", displayName: "Алекс Джонсон", email: "alex@example.com", avatarSystemName: "person.crop.circle.fill"),
+        onUpdateAvatar: { _ in },
         onSignOut: {},
         onDeleteAccount: {}
     )

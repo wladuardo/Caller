@@ -10,21 +10,37 @@ struct ContactRow: View {
     @State private var isShowingUnreadPulse = false
 
     var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                liquidGlassCard
+            } else {
+                fallbackCard
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.7), value: unreadMessageCount)
+        .onChange(of: unreadMessageCount) { oldValue, newValue in
+            guard newValue > oldValue, newValue > 0 else { return }
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.45)) {
+                isShowingUnreadPulse = true
+            }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.8).delay(0.12)) {
+                isShowingUnreadPulse = false
+            }
+        }
+    }
+}
+
+extension ContactRow {
+    private var rowContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center, spacing: 14) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: user.avatarSystemName)
-                        .font(.system(size: 34))
-                        .foregroundStyle(.white, .blue)
-                        .frame(width: 58, height: 58)
-                        .background(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.16), Color.white.opacity(0.06)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: Circle()
-                        )
+                    UserAvatarView(
+                        user: user,
+                        size: 58,
+                        iconSize: 34,
+                        iconTint: .white
+                    )
 
                     if unreadMessageCount > 0 {
                         Text(unreadBadgeText)
@@ -42,17 +58,18 @@ struct ContactRow: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(user.displayName)
                         .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(user.email)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.72))
                         .lineLimit(2)
                         .truncationMode(.middle)
                     if unreadMessageCount > 0 {
                         Text("\(unreadMessageCount) непрочит. сообщ.")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(.cyan)
                     }
                 }
                 .layoutPriority(1)
@@ -87,29 +104,61 @@ struct ContactRow: View {
             }
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .animation(.spring(response: 0.28, dampingFraction: 0.7), value: unreadMessageCount)
-        .onChange(of: unreadMessageCount) { oldValue, newValue in
-            guard newValue > oldValue, newValue > 0 else { return }
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.45)) {
-                isShowingUnreadPulse = true
-            }
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.8).delay(0.12)) {
-                isShowingUnreadPulse = false
-            }
-        }
     }
-}
 
-extension ContactRow {
+    private var fallbackCard: some View {
+        rowContent
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    @available(iOS 26.0, *)
+    private var liquidGlassCard: some View {
+        rowContent
+            .background {
+                GlassEffectContainer(spacing: 18) {
+                    ZStack {
+                        Color.clear
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.12),
+                                        Color.white.opacity(0.04),
+                                        Color.cyan.opacity(0.07)
+                                    ],
+                                    startPoint: UnitPoint.topLeading,
+                                    endPoint: UnitPoint.bottomTrailing
+                                )
+                            )
+
+                        VStack {
+                            HStack {
+                                Capsule(style: .continuous)
+                                    .fill(Color.white.opacity(0.20))
+                                    .frame(width: 120, height: 10)
+                                    .blur(radius: 10)
+                                Spacer()
+                            }
+                            Spacer()
+                        }
+                        .padding(.top, 12)
+                        .padding(.leading, 18)
+                    }
+                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
+                }
+            }
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 22, y: 14)
+    }
+
     private var unreadBadgeText: String {
         unreadMessageCount > 99 ? "99+" : "\(unreadMessageCount)"
     }
@@ -138,10 +187,10 @@ private struct ContactActionButton: View {
                         .background(Color.white, in: Capsule())
                 }
             }
-            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(tint.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .foregroundStyle(.white)
+            .background(buttonBackground)
         }
         .buttonStyle(.plain)
         .scaleEffect(isPressed ? 0.97 : 1)
@@ -155,6 +204,21 @@ private struct ContactActionButton: View {
                 }
         )
         .animation(.spring(response: 0.22, dampingFraction: 0.72), value: isPressed)
+    }
+
+    @ViewBuilder
+    private var buttonBackground: some View {
+        if #available(iOS 26.0, *) {
+            ZStack {
+                Color.clear
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(tint.opacity(0.14))
+            }
+            .glassEffect(.regular.tint(tint.opacity(0.45)).interactive(), in: .rect(cornerRadius: 18))
+        } else {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(tint.opacity(0.9))
+        }
     }
 
     @State private var isPressed = false

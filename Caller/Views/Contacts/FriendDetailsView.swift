@@ -48,11 +48,12 @@ struct FriendDetailsView: View {
 
     private var profileCard: some View {
         HStack(spacing: 16) {
-            Image(systemName: user.avatarSystemName)
-                .font(.system(size: 44))
-                .foregroundStyle(.white, .blue)
-                .frame(width: 76, height: 76)
-                .background(Color.white.opacity(0.08), in: Circle())
+            UserAvatarView(
+                user: user,
+                size: 76,
+                iconSize: 44,
+                iconTint: .white
+            )
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(user.displayName)
@@ -75,14 +76,7 @@ struct FriendDetailsView: View {
             Spacer()
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .callerGlassCard(cornerRadius: 24, tint: .cyan)
     }
 
     private var actionsCard: some View {
@@ -112,14 +106,7 @@ struct FriendDetailsView: View {
             )
         }
         .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .callerGlassCard(cornerRadius: 24, tint: .indigo)
     }
 
     private var destructiveCard: some View {
@@ -150,14 +137,7 @@ struct FriendDetailsView: View {
                 }
             }
             .padding(18)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.red.opacity(0.14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(Color.red.opacity(0.28), lineWidth: 1)
-                    )
-            )
+            .callerGlassCard(cornerRadius: 24, tint: .red)
         }
         .buttonStyle(.plain)
         .disabled(isRemoving)
@@ -200,7 +180,7 @@ private struct DetailsActionButton: View {
                     .font(.headline)
                     .foregroundStyle(.white)
                     .frame(width: 42, height: 42)
-                    .background(tint.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .callerGlassButtonSurface(cornerRadius: 14, tint: tint)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -215,7 +195,7 @@ private struct DetailsActionButton: View {
                 Spacer()
             }
             .padding(14)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .callerGlassCard(cornerRadius: 18, tint: tint)
         }
         .buttonStyle(.plain)
         .scaleEffect(isPressed ? 0.985 : 1)

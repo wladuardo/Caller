@@ -6,11 +6,12 @@ struct DiscoverUserRow: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: user.avatarSystemName)
-                .font(.system(size: 34))
-                .foregroundStyle(.white, .blue)
-                .frame(width: 52, height: 52)
-                .background(Color.white.opacity(0.08), in: Circle())
+            UserAvatarView(
+                user: user,
+                size: 52,
+                iconSize: 34,
+                iconTint: .white
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(user.displayName)
@@ -30,13 +31,14 @@ struct DiscoverUserRow: View {
             Button(action: onAddFriend) {
                 Text("Добавить")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.blue, in: Capsule())
+                    .callerGlassButtonSurface(cornerRadius: 999, tint: .blue)
             }
             .buttonStyle(.plain)
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .callerGlassCard(cornerRadius: 22, tint: .blue)
     }
 }

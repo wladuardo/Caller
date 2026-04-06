@@ -72,14 +72,7 @@ struct AuthenticationView: View {
                     }
                     .padding(20)
                     .frame(maxWidth: 420)
-                    .background(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                            )
-                    )
+                    .callerGlassCard(cornerRadius: 28, tint: .blue)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 20)
@@ -130,14 +123,7 @@ extension AuthenticationView {
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: 68)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-            )
+            .callerGlassCard(cornerRadius: 20, tint: iconBackground)
         }
         .buttonStyle(.plain)
     }
@@ -167,6 +153,7 @@ extension AuthenticationView {
             let accessToken = result.user.accessToken.tokenString
             await viewModel.signInWithGoogle(idToken: idToken, accessToken: accessToken)
         } catch {
+            guard !isUserCancelledAuthorization(error) else { return }
             viewModel.callError = .general(error.localizedDescription)
         }
     }
@@ -203,6 +190,10 @@ extension AuthenticationView {
                 self.appleSignInCoordinator = nil
             }
         } onFailure: { error in
+            guard !isUserCancelledAuthorization(error) else {
+                self.appleSignInCoordinator = nil
+                return
+            }
             self.viewModel.callError = .general(error.localizedDescription)
             self.appleSignInCoordinator = nil
         }
@@ -228,6 +219,22 @@ extension AuthenticationView {
             controller = presentedViewController
         }
         return controller
+    }
+
+    private func isUserCancelledAuthorization(_ error: Error) -> Bool {
+        let nsError = error as NSError
+
+        if nsError.domain == ASAuthorizationError.errorDomain,
+           nsError.code == ASAuthorizationError.canceled.rawValue {
+            return true
+        }
+
+        if let googleError = error as? GIDSignInError,
+           googleError.code == .canceled {
+            return true
+        }
+
+        return false
     }
 }
 

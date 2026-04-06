@@ -56,21 +56,15 @@ struct UserSearchView: View {
                     search()
                 }
                 .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.blue, in: Capsule())
+                .callerGlassButtonSurface(cornerRadius: 999, tint: .blue)
                 .buttonStyle(.plain)
                 .disabled(isSearching)
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-            )
+            .callerGlassCard(cornerRadius: 22, tint: .blue)
 
             if let searchMessage {
                 Text(searchMessage)

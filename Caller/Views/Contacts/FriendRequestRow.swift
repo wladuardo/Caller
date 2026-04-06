@@ -8,11 +8,12 @@ struct FriendRequestRow: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            Image(systemName: request.fromUser.avatarSystemName)
-                .font(.system(size: 34))
-                .foregroundStyle(.white, .orange)
-                .frame(width: 52, height: 52)
-                .background(Color.white.opacity(0.08), in: Circle())
+            UserAvatarView(
+                user: request.fromUser,
+                size: 52,
+                iconSize: 34,
+                iconTint: .white
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(request.fromUser.displayName)
@@ -30,7 +31,7 @@ struct FriendRequestRow: View {
             }
         }
         .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .callerGlassCard(cornerRadius: 22, tint: .green)
         .scaleEffect(hasAnimatedIn ? 1 : 0.96)
         .opacity(hasAnimatedIn ? 1 : 0)
         .offset(y: hasAnimatedIn ? 0 : 10)
@@ -54,7 +55,7 @@ private struct FriendRequestActionChip: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
-                .background(tint, in: Circle())
+                .callerGlassButtonSurface(cornerRadius: 999, tint: tint)
         }
         .buttonStyle(.plain)
         .scaleEffect(isPressed ? 0.9 : 1)

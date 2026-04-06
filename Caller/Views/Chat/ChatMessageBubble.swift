@@ -22,7 +22,7 @@ struct ChatMessageBubble: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(bubbleColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(bubbleBackground)
 
             if !isOutgoing {
                 Spacer(minLength: 56)
@@ -30,11 +30,16 @@ struct ChatMessageBubble: View {
         }
     }
 
-    private var bubbleColor: AnyShapeStyle {
+    @ViewBuilder
+    private var bubbleBackground: some View {
         if isOutgoing {
-            return AnyShapeStyle(Color.blue.gradient)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.blue.gradient)
+                .callerGlassCard(cornerRadius: 18, tint: .blue, showsShadow: false)
         } else {
-            return AnyShapeStyle(Color.white.opacity(0.12))
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+                .callerGlassCard(cornerRadius: 18, tint: .cyan, showsShadow: false)
         }
     }
 }

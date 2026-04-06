@@ -9,8 +9,12 @@ struct CallControlButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.title2)
+                .foregroundStyle(.white)
                 .frame(width: 58, height: 58)
-                .background(isActive ? Color.white.opacity(0.22) : Color.white.opacity(0.12), in: Circle())
+                .callerGlassButtonSurface(
+                    cornerRadius: 999,
+                    tint: isActive ? .white : .gray
+                )
         }
         .buttonStyle(.plain)
     }
@@ -27,7 +31,7 @@ struct LargeCallActionButton: View {
                 .font(.title.bold())
                 .foregroundStyle(.white)
                 .frame(width: 78, height: 78)
-                .background(tint, in: Circle())
+                .callerGlassButtonSurface(cornerRadius: 999, tint: tint)
         }
         .buttonStyle(.plain)
     }
@@ -44,7 +48,7 @@ struct ActionChip: View {
                 .font(.headline)
                 .foregroundStyle(.white)
                 .frame(width: 42, height: 42)
-                .background(tint.opacity(0.92), in: Circle())
+                .callerGlassButtonSurface(cornerRadius: 999, tint: tint)
         }
         .buttonStyle(.plain)
     }

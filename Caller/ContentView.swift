@@ -29,47 +29,6 @@ struct ContentView: View {
                 .zIndex(1)
             }
 
-            if let chatBanner = viewModel.chatBanner, viewModel.activeCall == nil {
-                VStack {
-                    Button {
-                        viewModel.dismissChatBanner()
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "message.fill")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .frame(width: 38, height: 38)
-                                .background(Color.indigo, in: Circle())
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(chatBanner.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                Text(chatBanner.message)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.75))
-                                    .lineLimit(2)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(14)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(1.5)
-            }
-
             if let activeCall = viewModel.activeCall {
                 ActiveCallView(
                     call: activeCall,
