@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.281819595333-47edugh6bk130fp8s9u2q89hii13dqei</string>
+				</array>
+			</dict>
+		</array>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Caller uses the microphone for audio and video calls.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Caller uses the camera for video calls and live preview.</string>
+		<key>SignalingServerURL</key>
+		<string></string>
+	</dict>
+	</plist>

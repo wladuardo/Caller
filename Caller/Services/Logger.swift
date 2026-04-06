@@ -1,0 +1,11 @@
+import Foundation
+
+final class Logger {
+    func info(_ message: String) {
+        print("[INFO] \(message)")
+    }
+
+    func error(_ message: String) {
+        print("[ERROR] \(message)")
+    }
+}
