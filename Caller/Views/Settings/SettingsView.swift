@@ -104,6 +104,18 @@ struct SettingsView: View {
 
     private var actionsCard: some View {
         VStack(spacing: 12) {
+            if currentUser.username?.isEmpty == false {
+                ShareLink(item: shareMessage, subject: Text("Мой никнейм в Caller")) {
+                    SettingsActionRow(
+                        title: "Поделиться никнеймом",
+                        subtitle: "Отправить свой никнейм, чтобы с вами могли быстро связаться.",
+                        systemName: "square.and.arrow.up",
+                        tint: .cyan
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
             SettingsActionButton(
                 title: "Выйти",
                 subtitle: "Завершить текущую сессию на этом устройстве.",
@@ -122,6 +134,11 @@ struct SettingsView: View {
         }
         .padding(18)
         .callerGlassCard(cornerRadius: 24, tint: .blue)
+    }
+
+    private var shareMessage: String {
+        let username = currentUser.username ?? ""
+        return "Добавь меня в Caller по никнейму: @\(username)"
     }
 
     private func uploadAvatar(from item: PhotosPickerItem) {
@@ -153,29 +170,45 @@ private struct SettingsActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: systemName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .callerGlassButtonSurface(cornerRadius: 14, tint: tint)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-
-                Spacer()
-            }
-            .padding(14)
-            .callerGlassCard(cornerRadius: 18, tint: tint)
+            SettingsActionRow(
+                title: title,
+                subtitle: subtitle,
+                systemName: systemName,
+                tint: tint
+            )
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsActionRow: View {
+    let title: String
+    let subtitle: String
+    let systemName: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemName)
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .callerGlassButtonSurface(cornerRadius: 14, tint: tint)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .callerGlassCard(cornerRadius: 18, tint: tint)
     }
 }
 

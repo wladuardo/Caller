@@ -153,7 +153,6 @@ final class AppViewModel: ObservableObject {
     func sendFriendRequest(to user: AppUser) async {
         do {
             try await environment.friendService.sendFriendRequest(to: user)
-            await loadSocialData()
         } catch {
             callError = .general("Не удалось отправить запрос в друзья.")
         }
@@ -162,7 +161,6 @@ final class AppViewModel: ObservableObject {
     func acceptFriendRequest(from user: AppUser) async {
         do {
             try await environment.friendService.acceptFriendRequest(from: user)
-            await loadSocialData()
         } catch {
             callError = .general("Не удалось принять запрос в друзья.")
         }
@@ -171,7 +169,6 @@ final class AppViewModel: ObservableObject {
     func declineFriendRequest(from user: AppUser) async {
         do {
             try await environment.friendService.declineFriendRequest(from: user)
-            await loadSocialData()
         } catch {
             callError = .general("Не удалось отклонить запрос в друзья.")
         }
@@ -180,7 +177,6 @@ final class AppViewModel: ObservableObject {
     func cancelOutgoingFriendRequest(to user: AppUser) async {
         do {
             try await environment.friendService.cancelOutgoingRequest(to: user)
-            await loadSocialData()
         } catch {
             callError = .general("Не удалось отменить исходящий запрос.")
         }
@@ -189,7 +185,6 @@ final class AppViewModel: ObservableObject {
     func removeFriend(_ user: AppUser) async {
         do {
             try await environment.friendService.removeFriend(user)
-            await loadSocialData()
         } catch {
             callError = .general("Не удалось удалить друга.")
         }

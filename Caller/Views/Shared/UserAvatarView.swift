@@ -36,7 +36,7 @@ struct UserAvatarView: View {
     private var avatarContent: some View {
         if let avatarURL = user.avatarURL,
            let url = URL(string: avatarURL) {
-            AsyncImage(url: url) { image in
+            CachedRemoteImage(url: url) { image in
                 image
                     .resizable()
                     .scaledToFill()

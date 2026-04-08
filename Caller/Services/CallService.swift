@@ -105,6 +105,7 @@ final class WebRTCCallService: NSObject, CallServicing {
 
     func startCall(with user: AppUser, type: CallType, currentUser: AppUser) async {
         self.currentUser = currentUser
+        logger.info("Starting \(type.rawValue) call from \(currentUser.id) to \(user.id)")
 
         guard await validatePermissions(for: type) else { return }
 
@@ -132,6 +133,7 @@ final class WebRTCCallService: NSObject, CallServicing {
             try await setLocalDescription(offer, on: peerConnection)
 
             updateActiveCall { $0.status = .ringing }
+            logger.info("Created local offer for call \(session.id.uuidString)")
 
             try await signalingService.send(
                 SignalingMessage(
@@ -142,6 +144,7 @@ final class WebRTCCallService: NSObject, CallServicing {
                     sentAt: .now
                 )
             )
+            logger.info("Offer sent for call \(session.id.uuidString)")
         } catch let error as CallError {
             errorSubject.send(error)
             teardownMedia()
@@ -157,22 +160,23 @@ final class WebRTCCallService: NSObject, CallServicing {
 
         guard var incoming = incomingCallSubject.value,
               let remoteOffer = pendingIncomingOffer else { return }
+        logger.info("Accepting incoming \(incoming.type.rawValue) call \(incoming.id.uuidString) from \(incoming.participant.id)")
         guard await validatePermissions(for: incoming.type) else { return }
 
         do {
             try await configureAudioSession(useSpeaker: incoming.type == .video)
             let peerConnection = try createPeerConnection()
             self.peerConnection = peerConnection
+            incoming.status = .connecting
+            incoming.startedAt = .now
+            activeCallSubject.send(incoming)
+            incomingCallSubject.send(nil)
             try await prepareLocalMedia(for: incoming.type, callID: incoming.id)
             try await setRemoteDescription(remoteOffer, on: peerConnection)
 
             let answer = try await createAnswer(on: peerConnection, type: incoming.type)
             try await setLocalDescription(answer, on: peerConnection)
-
-            incoming.status = .connecting
-            incoming.startedAt = .now
-            activeCallSubject.send(incoming)
-            incomingCallSubject.send(nil)
+            logger.info("Created local answer for call \(incoming.id.uuidString)")
 
             try await signalingService.send(
                 SignalingMessage(
@@ -183,6 +187,7 @@ final class WebRTCCallService: NSObject, CallServicing {
                     sentAt: .now
                 )
             )
+            logger.info("Answer sent for call \(incoming.id.uuidString)")
         } catch let error as CallError {
             errorSubject.send(error)
             if let incomingCallID = incomingCallSubject.value?.id {
@@ -333,6 +338,7 @@ final class WebRTCCallService: NSObject, CallServicing {
 
     @MainActor
     private func handle(_ message: SignalingMessage) async {
+        logger.info("Handling signaling payload \(message.payload.logDescription) for call \(message.callID.uuidString)")
         switch message.payload {
         case .offer(let sdp, let type):
             pendingIncomingOffer = RTCSessionDescription(type: .offer, sdp: sdp)
@@ -350,6 +356,7 @@ final class WebRTCCallService: NSObject, CallServicing {
                 startedAt: nil
             )
             incomingCallSubject.send(session)
+            logger.info("Incoming offer stored for call \(message.callID.uuidString)")
 
             if pendingAcceptedCallID == message.callID, let currentUser {
                 pendingAcceptedCallID = nil
@@ -359,6 +366,7 @@ final class WebRTCCallService: NSObject, CallServicing {
             }
         case .answer(let sdp):
             guard let peerConnection else { return }
+            logger.info("Applying remote answer for call \(message.callID.uuidString)")
 
             do {
                 try await setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp), on: peerConnection)
@@ -372,6 +380,7 @@ final class WebRTCCallService: NSObject, CallServicing {
             }
         case .iceCandidate(let candidate):
             guard let peerConnection else { return }
+            logger.info("Applying remote ICE candidate for call \(message.callID.uuidString)")
 
             do {
                 try await addIceCandidate(
@@ -386,6 +395,7 @@ final class WebRTCCallService: NSObject, CallServicing {
                 logger.error("Failed to add ICE candidate: \(error.localizedDescription)")
             }
         case .hangup:
+            logger.info("Received hangup for call \(message.callID.uuidString)")
             let endedCallID = activeCallSubject.value?.id ?? incomingCallSubject.value?.id
             if var activeCall = activeCallSubject.value {
                 activeCall.status = .ended
@@ -673,15 +683,16 @@ extension WebRTCCallService: RTCPeerConnectionDelegate {
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        guard let currentUser, let activeCall = activeCallSubject.value else { return }
+        guard let currentUser else { return }
+        guard let call = activeCallSubject.value ?? incomingCallSubject.value else { return }
 
         Task {
             do {
                 try await signalingService.send(
                     SignalingMessage(
-                        callID: activeCall.id,
+                        callID: call.id,
                         fromUserID: currentUser.id,
-                        toUserID: activeCall.participant.id,
+                        toUserID: call.participant.id,
                         payload: .iceCandidate(
                             IceCandidatePayload(
                                 sdp: candidate.sdp,

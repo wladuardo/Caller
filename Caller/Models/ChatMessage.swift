@@ -1,16 +1,43 @@
 import Foundation
 
+enum ChatAttachmentKind: String, Codable, Equatable {
+    case image
+    case file
+}
+
+struct ChatAttachment: Codable, Equatable {
+    let kind: ChatAttachmentKind
+    let fileName: String
+    let storagePath: String
+    let downloadURL: String
+    let contentType: String?
+    let fileSize: Int?
+}
+
+struct ChatDraftAttachment: Identifiable, Equatable {
+    let id = UUID()
+    let kind: ChatAttachmentKind
+    let fileName: String
+    let data: Data
+    let contentType: String
+
+    var fileSize: Int {
+        data.count
+    }
+}
+
 struct ChatMessage: Identifiable, Codable, Equatable {
     let id: String
     let conversationID: String
     let senderID: String
     let recipientID: String
     let text: String
+    let attachment: ChatAttachment?
     let sentAt: Date
     let isReadByRecipient: Bool
 
     var isEmpty: Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachment == nil
     }
 
     func isOutgoing(for userID: String) -> Bool {

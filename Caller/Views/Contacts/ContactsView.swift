@@ -153,10 +153,6 @@ struct ContactsView: View {
             }
         }
         .toolbar((navigationPath.isEmpty && !isShowingSearch) ? .visible : .hidden, for: .tabBar)
-        .animation(.easeInOut(duration: 0.25), value: navigationPath.isEmpty && !isShowingSearch)
-        .animation(.spring(response: 0.4, dampingFraction: 0.86), value: viewModel.contacts.map(\.id))
-        .animation(.spring(response: 0.36, dampingFraction: 0.84), value: viewModel.incomingFriendRequests.map(\.id))
-        .animation(.spring(response: 0.36, dampingFraction: 0.84), value: viewModel.outgoingFriendRequests.map(\.id))
         .onAppear {
             withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
                 hasAppeared = true
@@ -190,12 +186,29 @@ struct ContactsView: View {
     }
 
     private func emptyState(_ message: String) -> some View {
-        Text(message)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .callerGlassCard(cornerRadius: 18, tint: .cyan)
+        VStack(alignment: .leading, spacing: 14) {
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                isShowingSearch = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.plus")
+                    Text("Добавить друзей")
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .callerGlassButtonSurface(cornerRadius: 16, tint: .blue)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .callerGlassCard(cornerRadius: 18, tint: .cyan)
     }
 
     private func statPill(title: String, value: String) -> some View {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct IncomingCallView: View {
     let call: CallSession
@@ -43,6 +44,14 @@ struct IncomingCallView: View {
                 .padding(.bottom, 40)
             }
             .padding()
+        }
+        .onAppear {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil,
+                from: nil,
+                for: nil
+            )
         }
     }
 }

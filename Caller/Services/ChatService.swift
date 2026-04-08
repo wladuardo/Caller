@@ -1,13 +1,19 @@
 import FirebaseFirestore
 import Foundation
+#if canImport(FirebaseStorage)
+import FirebaseStorage
+#endif
+import UIKit
 
 protocol ChatServicing {
     func observeMessages(with user: AppUser, currentUser: AppUser) -> AsyncStream<[ChatMessage]>
+    func observeTypingStatus(with user: AppUser, currentUser: AppUser) -> AsyncStream<Bool>
     func observeConversationSummaries(for currentUser: AppUser) -> AsyncStream<[ChatConversationSummary]>
     func observeUnreadMessages(for currentUser: AppUser) -> AsyncStream<[UnreadMessageSummary]>
     func prepareConversation(with user: AppUser, currentUser: AppUser) async throws
     func markConversationAsRead(with user: AppUser, currentUser: AppUser) async throws
-    func sendMessage(_ text: String, to user: AppUser, from currentUser: AppUser) async throws
+    func setTyping(_ isTyping: Bool, with user: AppUser, currentUser: AppUser) async throws
+    func sendMessage(_ text: String, attachment: ChatDraftAttachment?, to user: AppUser, from currentUser: AppUser) async throws
 }
 
 struct MockChatService: ChatServicing {
@@ -20,6 +26,7 @@ struct MockChatService: ChatServicing {
                 senderID: user.id,
                 recipientID: currentUser.id,
                 text: "Hey, ready for a call later?",
+                attachment: nil,
                 sentAt: Date().addingTimeInterval(-180),
                 isReadByRecipient: false
             ),
@@ -29,6 +36,7 @@ struct MockChatService: ChatServicing {
                 senderID: currentUser.id,
                 recipientID: user.id,
                 text: "Sure. Ping me here first.",
+                attachment: nil,
                 sentAt: Date().addingTimeInterval(-120),
                 isReadByRecipient: true
             )
@@ -36,6 +44,15 @@ struct MockChatService: ChatServicing {
 
         return AsyncStream { continuation in
             continuation.yield(messages)
+            continuation.finish()
+        }
+    }
+
+    func observeTypingStatus(with user: AppUser, currentUser: AppUser) -> AsyncStream<Bool> {
+        _ = user
+        _ = currentUser
+        return AsyncStream { continuation in
+            continuation.yield(false)
             continuation.finish()
         }
     }
@@ -74,8 +91,15 @@ struct MockChatService: ChatServicing {
         _ = currentUser
     }
 
-    func sendMessage(_ text: String, to user: AppUser, from currentUser: AppUser) async throws {
+    func setTyping(_ isTyping: Bool, with user: AppUser, currentUser: AppUser) async throws {
+        _ = isTyping
+        _ = user
+        _ = currentUser
+    }
+
+    func sendMessage(_ text: String, attachment: ChatDraftAttachment?, to user: AppUser, from currentUser: AppUser) async throws {
         _ = text
+        _ = attachment
         _ = user
         _ = currentUser
     }
@@ -121,9 +145,27 @@ final class FirebaseChatService: ChatServicing {
 
                         let messages = snapshot.documents.compactMap { document -> ChatMessage? in
                             guard let senderID = document["senderID"] as? String,
-                                  let recipientID = document["recipientID"] as? String,
-                                  let text = document["text"] as? String else {
+                                  let recipientID = document["recipientID"] as? String else {
                                 return nil
+                            }
+
+                            let attachment: ChatAttachment?
+                            if let rawAttachment = document["attachment"] as? [String: Any],
+                               let kindRawValue = rawAttachment["kind"] as? String,
+                               let kind = ChatAttachmentKind(rawValue: kindRawValue),
+                               let fileName = rawAttachment["fileName"] as? String,
+                               let storagePath = rawAttachment["storagePath"] as? String,
+                               let downloadURL = rawAttachment["downloadURL"] as? String {
+                                attachment = ChatAttachment(
+                                    kind: kind,
+                                    fileName: fileName,
+                                    storagePath: storagePath,
+                                    downloadURL: downloadURL,
+                                    contentType: rawAttachment["contentType"] as? String,
+                                    fileSize: rawAttachment["fileSize"] as? Int
+                                )
+                            } else {
+                                attachment = nil
                             }
 
                             return ChatMessage(
@@ -131,7 +173,8 @@ final class FirebaseChatService: ChatServicing {
                                 conversationID: conversationID,
                                 senderID: senderID,
                                 recipientID: recipientID,
-                                text: text,
+                                text: document["text"] as? String ?? "",
+                                attachment: attachment,
                                 sentAt: (document["sentAt"] as? Timestamp)?.dateValue() ?? .now,
                                 isReadByRecipient: (document["isReadByRecipient"] as? Bool) ?? false
                             )
@@ -196,6 +239,41 @@ final class FirebaseChatService: ChatServicing {
         }
     }
 
+    func observeTypingStatus(with user: AppUser, currentUser: AppUser) -> AsyncStream<Bool> {
+        let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
+
+        return AsyncStream { continuation in
+            let listener = db.collection("conversations")
+                .document(conversationID)
+                .addSnapshotListener { [logger] snapshot, error in
+                    if let error {
+                        logger.error("Typing listener failed: \(error.localizedDescription)")
+                        continuation.yield(false)
+                        return
+                    }
+
+                    guard let data = snapshot?.data() else {
+                        continuation.yield(false)
+                        return
+                    }
+
+                    let rawTypingStates = data["typingStates"] as? [String: Any] ?? [:]
+                    let typingStates = rawTypingStates.reduce(into: [String: Bool]()) { partialResult, entry in
+                        if let value = entry.value as? Bool {
+                            partialResult[entry.key] = value
+                        } else if let number = entry.value as? NSNumber {
+                            partialResult[entry.key] = number.boolValue
+                        }
+                    }
+                    continuation.yield(typingStates[user.id] ?? false)
+                }
+
+            continuation.onTermination = { _ in
+                listener.remove()
+            }
+        }
+    }
+
     func observeUnreadMessages(for currentUser: AppUser) -> AsyncStream<[UnreadMessageSummary]> {
         _ = currentUser
         return AsyncStream { continuation in
@@ -213,6 +291,14 @@ final class FirebaseChatService: ChatServicing {
             "unreadCounts": [
                 currentUser.id: 0,
                 user.id: 0
+            ],
+            "typingStates": [
+                currentUser.id: false,
+                user.id: false
+            ],
+            "typingUpdatedAt": [
+                currentUser.id: Timestamp(date: .now),
+                user.id: Timestamp(date: .now)
             ],
             "updatedAt": Timestamp(date: .now)
         ], merge: true)
@@ -247,6 +333,7 @@ final class FirebaseChatService: ChatServicing {
                 senderID: message.senderID,
                 recipientID: message.recipientID,
                 text: message.text,
+                attachment: message.attachment,
                 sentAt: message.sentAt,
                 isReadByRecipient: true
             )
@@ -254,32 +341,81 @@ final class FirebaseChatService: ChatServicing {
         await cache.store(cachedMessages, for: conversationID)
     }
 
-    func sendMessage(_ text: String, to user: AppUser, from currentUser: AppUser) async throws {
+    func setTyping(_ isTyping: Bool, with user: AppUser, currentUser: AppUser) async throws {
+        let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
+        let conversationRef = db.collection("conversations").document(conversationID)
+        do {
+            try await conversationRef.updateData([
+                "typingStates.\(currentUser.id)": isTyping,
+                "typingUpdatedAt.\(currentUser.id)": Timestamp(date: .now)
+            ])
+        } catch {
+            logger.error("Typing update failed, recreating conversation document: \(error.localizedDescription)")
+            try await conversationRef.setData([
+                "id": conversationID,
+                "participantIDs": [currentUser.id, user.id].sorted(),
+                "typingStates": [
+                    currentUser.id: isTyping,
+                    user.id: false
+                ],
+                "typingUpdatedAt": [
+                    currentUser.id: Timestamp(date: .now),
+                    user.id: Timestamp(date: .now)
+                ],
+                "updatedAt": Timestamp(date: .now)
+            ], merge: true)
+        }
+    }
+
+    func sendMessage(_ text: String, attachment: ChatDraftAttachment?, to user: AppUser, from currentUser: AppUser) async throws {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else { return }
+        guard !trimmedText.isEmpty || attachment != nil else { return }
 
         let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
         let conversationRef = db.collection("conversations").document(conversationID)
         let messageRef = conversationRef.collection("messages").document()
         let sentAt = Timestamp(date: .now)
+        let uploadedAttachment = try await uploadAttachmentIfNeeded(
+            attachment,
+            conversationID: conversationID,
+            messageID: messageRef.documentID
+        )
+        let previewText = conversationPreviewText(text: trimmedText, attachment: uploadedAttachment)
 
         let batch = db.batch()
         batch.setData([
             "id": conversationID,
             "participantIDs": [currentUser.id, user.id].sorted(),
             "updatedAt": sentAt,
-            "lastMessageText": trimmedText,
+            "lastMessageText": previewText,
             "lastMessageSenderID": currentUser.id,
+            "typingStates.\(currentUser.id)": false,
             "unreadCounts.\(currentUser.id)": 0,
             "unreadCounts.\(user.id)": FieldValue.increment(Int64(1))
         ], forDocument: conversationRef, merge: true)
-        batch.setData([
+        var messagePayload: [String: Any] = [
             "senderID": currentUser.id,
             "recipientID": user.id,
             "text": trimmedText,
             "sentAt": sentAt,
             "isReadByRecipient": false
-        ], forDocument: messageRef)
+        ]
+        if let uploadedAttachment {
+            var attachmentPayload: [String: Any] = [
+                "kind": uploadedAttachment.kind.rawValue,
+                "fileName": uploadedAttachment.fileName,
+                "storagePath": uploadedAttachment.storagePath,
+                "downloadURL": uploadedAttachment.downloadURL
+            ]
+            if let contentType = uploadedAttachment.contentType {
+                attachmentPayload["contentType"] = contentType
+            }
+            if let fileSize = uploadedAttachment.fileSize {
+                attachmentPayload["fileSize"] = fileSize
+            }
+            messagePayload["attachment"] = attachmentPayload
+        }
+        batch.setData(messagePayload, forDocument: messageRef)
         do {
             try await batch.commit()
             let newMessage = ChatMessage(
@@ -288,6 +424,7 @@ final class FirebaseChatService: ChatServicing {
                 senderID: currentUser.id,
                 recipientID: user.id,
                 text: trimmedText,
+                attachment: uploadedAttachment,
                 sentAt: sentAt.dateValue(),
                 isReadByRecipient: false
             )
@@ -296,6 +433,110 @@ final class FirebaseChatService: ChatServicing {
             logger.error("Failed to send chat message: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    private func conversationPreviewText(text: String, attachment: ChatAttachment?) -> String {
+        if !text.isEmpty {
+            return text
+        }
+        guard let attachment else {
+            return ""
+        }
+        switch attachment.kind {
+        case .image:
+            return "Фото"
+        case .file:
+            return "Файл: \(attachment.fileName)"
+        }
+    }
+
+    private func uploadAttachmentIfNeeded(
+        _ attachment: ChatDraftAttachment?,
+        conversationID: String,
+        messageID: String
+    ) async throws -> ChatAttachment? {
+        guard let attachment else { return nil }
+#if canImport(FirebaseStorage)
+        let normalizedPayload = normalizedAttachmentPayload(for: attachment)
+        let sanitizedFileName = sanitizedAttachmentFileName(normalizedPayload.fileName)
+        let storagePath = "chatAttachments/\(conversationID)/\(messageID)/\(sanitizedFileName)"
+        let storageRef = Storage.storage().reference().child(storagePath)
+        let metadata = StorageMetadata()
+        metadata.contentType = normalizedPayload.contentType
+
+        _ = try await storageRef.putDataAsync(normalizedPayload.data, metadata: metadata)
+        let downloadURL = try await storageRef.downloadURL()
+
+        return ChatAttachment(
+            kind: normalizedPayload.kind,
+            fileName: normalizedPayload.fileName,
+            storagePath: storagePath,
+            downloadURL: downloadURL.absoluteString,
+            contentType: normalizedPayload.contentType,
+            fileSize: normalizedPayload.data.count
+        )
+#else
+        throw NSError(domain: "FirebaseStorageUnavailable", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "Firebase Storage не подключен для отправки вложений."
+        ])
+#endif
+    }
+
+    private func sanitizedAttachmentFileName(_ fileName: String) -> String {
+        let invalidCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+        let parts = fileName.components(separatedBy: invalidCharacters)
+        let sanitized = parts.joined(separator: "_")
+        return sanitized.isEmpty ? UUID().uuidString : sanitized
+    }
+
+    private func normalizedAttachmentPayload(for attachment: ChatDraftAttachment) -> ChatDraftAttachment {
+        guard attachment.kind == .image,
+              let image = UIImage(data: attachment.data),
+              let normalizedData = normalizedImageData(from: image) else {
+            return attachment
+        }
+
+        let normalizedName: String
+        if attachment.fileName.lowercased().hasSuffix(".jpg") || attachment.fileName.lowercased().hasSuffix(".jpeg") {
+            normalizedName = attachment.fileName
+        } else {
+            let baseName = attachment.fileName
+                .components(separatedBy: ".")
+                .dropLast()
+                .joined(separator: ".")
+            normalizedName = (baseName.isEmpty ? "photo" : baseName) + ".jpg"
+        }
+
+        return ChatDraftAttachment(
+            kind: .image,
+            fileName: normalizedName,
+            data: normalizedData,
+            contentType: "image/jpeg"
+        )
+    }
+
+    private func normalizedImageData(from image: UIImage) -> Data? {
+        let maxDimension: CGFloat = 1800
+        let largestSide = max(image.size.width, image.size.height)
+        let scale = largestSide > maxDimension ? maxDimension / largestSide : 1
+        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resizedImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+
+        var compression: CGFloat = 0.82
+        let targetBytes = 8 * 1024 * 1024
+
+        while compression >= 0.45 {
+            if let data = resizedImage.jpegData(compressionQuality: compression), data.count <= targetBytes {
+                return data
+            }
+            compression -= 0.12
+        }
+
+        return resizedImage.jpegData(compressionQuality: 0.35)
     }
 }
 

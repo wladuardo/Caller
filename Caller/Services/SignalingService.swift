@@ -66,6 +66,7 @@ final class WebSocketSignalingService: SignalingServicing {
 final class FirebaseFirestoreSignalingService: SignalingServicing {
     private let db: Firestore
     private let collectionName: String
+    private let logger = Logger()
     private var listener: ListenerRegistration?
     private var continuation: AsyncStream<SignalingMessage>.Continuation?
     private let encoder = JSONEncoder()
@@ -88,15 +89,17 @@ final class FirebaseFirestoreSignalingService: SignalingServicing {
     func connect(userID: String) async throws {
         listener?.remove()
         processedDocumentIDs.removeAll()
+        logger.info("Starting Firestore signaling listener for user \(userID)")
         listener = db.collection(collectionName)
             .whereField("toUserID", isEqualTo: userID)
             .addSnapshotListener { [weak self] snapshot, error in
                 guard let self else { return }
                 if let error {
-                    print("[ERROR] Firestore signaling listener failed: \(error.localizedDescription)")
+                    self.logger.error("Firestore signaling listener failed: \(error.localizedDescription)")
                     return
                 }
                 guard let snapshot else { return }
+                self.logger.info("Received signaling snapshot with \(snapshot.documents.count) documents for user \(userID)")
 
                 let sortedDocuments = snapshot.documents.sorted {
                     let lhs = ($0["sentAt"] as? Timestamp)?.dateValue() ?? .distantPast
@@ -112,6 +115,7 @@ final class FirebaseFirestoreSignalingService: SignalingServicing {
                         continue
                     }
 
+                    self.logger.info("Received signaling message \(message.payload.logDescription) for call \(message.callID.uuidString) from \(message.fromUserID) to \(message.toUserID)")
                     self.processedDocumentIDs.insert(document.documentID)
                     if let continuation = self.continuation {
                         continuation.yield(message)
@@ -131,6 +135,7 @@ final class FirebaseFirestoreSignalingService: SignalingServicing {
     func send(_ message: SignalingMessage) async throws {
         let data = try encoder.encode(message)
         let payload = String(decoding: data, as: UTF8.self)
+        logger.info("Sending signaling message \(message.payload.logDescription) for call \(message.callID.uuidString) from \(message.fromUserID) to \(message.toUserID)")
         try await db.collection(collectionName).addDocument(data: [
             "toUserID": message.toUserID,
             "fromUserID": message.fromUserID,
@@ -144,5 +149,20 @@ final class FirebaseFirestoreSignalingService: SignalingServicing {
         guard let continuation else { return }
         bufferedMessages.forEach { continuation.yield($0) }
         bufferedMessages.removeAll()
+    }
+}
+
+extension SignalingPayload {
+    var logDescription: String {
+        switch self {
+        case .offer:
+            return "offer"
+        case .answer:
+            return "answer"
+        case .iceCandidate:
+            return "iceCandidate"
+        case .hangup:
+            return "hangup"
+        }
     }
 }
