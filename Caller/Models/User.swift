@@ -7,6 +7,7 @@ struct AppUser: Identifiable, Codable, Equatable, Hashable {
     let avatarSystemName: String
     let avatarURL: String?
     let username: String?
+    let mutedNotificationUserIDs: [String]
 
     init(
         id: String,
@@ -14,7 +15,8 @@ struct AppUser: Identifiable, Codable, Equatable, Hashable {
         email: String,
         avatarSystemName: String,
         avatarURL: String? = nil,
-        username: String? = nil
+        username: String? = nil,
+        mutedNotificationUserIDs: [String] = []
     ) {
         self.id = id
         self.displayName = displayName
@@ -22,5 +24,6 @@ struct AppUser: Identifiable, Codable, Equatable, Hashable {
         self.avatarSystemName = avatarSystemName
         self.avatarURL = avatarURL
         self.username = username
+        self.mutedNotificationUserIDs = mutedNotificationUserIDs
     }
 }

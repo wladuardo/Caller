@@ -3,15 +3,18 @@ import SwiftUI
 struct FriendDetailsView: View {
     let user: AppUser
     let unreadMessageCount: Int
+    let isNotificationsMuted: Bool
     let onOpenChat: () -> Void
     let onStartAudioCall: () -> Void
     let onStartVideoCall: () -> Void
+    let onSetNotificationsMuted: (Bool) async -> Void
     let onRemoveFriend: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var isShowingRemoveConfirmation = false
     @State private var isRemoving = false
-    @State private var hasAnimatedIn = false
+    @State private var isUpdatingNotifications = false
+    @State private var notificationsMuted = false
 
     var body: some View {
         ZStack {
@@ -25,24 +28,16 @@ struct FriendDetailsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     profileCard
-                        .offset(y: hasAnimatedIn ? 0 : 18)
-                        .opacity(hasAnimatedIn ? 1 : 0)
                     actionsCard
-                        .offset(y: hasAnimatedIn ? 0 : 28)
-                        .opacity(hasAnimatedIn ? 1 : 0)
                     destructiveCard
-                        .offset(y: hasAnimatedIn ? 0 : 36)
-                        .opacity(hasAnimatedIn ? 1 : 0)
                 }
                 .padding(20)
             }
         }
         .navigationTitle("Профиль")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) {
-                hasAnimatedIn = true
-            }
+        .task {
+            notificationsMuted = isNotificationsMuted
         }
     }
 
@@ -80,30 +75,45 @@ struct FriendDetailsView: View {
     }
 
     private var actionsCard: some View {
-        VStack(spacing: 12) {
-            DetailsActionButton(
-                title: "Открыть чат",
-                subtitle: "Перейти к переписке с этим пользователем.",
-                systemName: "message.fill",
-                tint: .indigo,
-                action: onOpenChat
-            )
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                compactActionButton(
+                    title: "Чат",
+                    systemName: "message.fill",
+                    tint: .indigo,
+                    action: onOpenChat
+                )
+                compactActionButton(
+                    title: "Звонок",
+                    systemName: "phone.fill",
+                    tint: .green,
+                    action: onStartAudioCall
+                )
+                compactActionButton(
+                    title: "Видео",
+                    systemName: "video.fill",
+                    tint: .blue,
+                    action: onStartVideoCall
+                )
+                compactActionButton(
+                    title: notificationsMuted ? "Звук выкл" : "Звук",
+                    systemName: notificationsMuted ? "bell.slash.fill" : "bell.fill",
+                    tint: notificationsMuted ? .orange : .teal,
+                    isLoading: isUpdatingNotifications,
+                    action: {
+                        updateNotificationsMuted(!notificationsMuted)
+                    }
+                )
+            }
 
-            DetailsActionButton(
-                title: "Аудиозвонок",
-                subtitle: "Позвонить без видео.",
-                systemName: "phone.fill",
-                tint: .green,
-                action: onStartAudioCall
+            Text(
+                notificationsMuted
+                    ? "Уведомления от этого пользователя отключены."
+                    : "Уведомления о сообщениях и звонках от этого пользователя включены."
             )
-
-            DetailsActionButton(
-                title: "Видеозвонок",
-                subtitle: "Начать звонок с видео.",
-                systemName: "video.fill",
-                tint: .blue,
-                action: onStartVideoCall
-            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(18)
         .callerGlassCard(cornerRadius: 24, tint: .indigo)
@@ -163,51 +173,54 @@ struct FriendDetailsView: View {
             }
         }
     }
-}
 
-private struct DetailsActionButton: View {
-    let title: String
-    let subtitle: String
-    let systemName: String
-    let tint: Color
-    let action: () -> Void
-    @State private var isPressed = false
+    private func updateNotificationsMuted(_ isMuted: Bool) {
+        guard !isUpdatingNotifications else { return }
 
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: systemName)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .frame(width: 42, height: 42)
-                    .callerGlassButtonSurface(cornerRadius: 14, tint: tint)
+        isUpdatingNotifications = true
+        notificationsMuted = isMuted
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-
-                Spacer()
+        Task {
+            await onSetNotificationsMuted(isMuted)
+            await MainActor.run {
+                isUpdatingNotifications = false
+                notificationsMuted = isMuted
             }
-            .padding(14)
-            .callerGlassCard(cornerRadius: 18, tint: tint)
+        }
+    }
+
+    private func compactActionButton(
+        title: String,
+        systemName: String,
+        tint: Color,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+
+                    if isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: systemName)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(tint)
+                    }
+                }
+                .frame(height: 64)
+
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
-        .scaleEffect(isPressed ? 0.985 : 1)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !isPressed { isPressed = true }
-                }
-                .onEnded { _ in
-                    isPressed = false
-                }
-        )
-        .animation(.spring(response: 0.22, dampingFraction: 0.72), value: isPressed)
+        .disabled(isLoading)
     }
 }

@@ -32,6 +32,7 @@ final class WebRTCCallService: NSObject, CallServicing {
     private let logger: Logger
     private let peerConnectionFactory: RTCPeerConnectionFactory
     private let audioSession = AVAudioSession.sharedInstance()
+    private let ringbackTonePlayer = CallTonePlayer()
 
     private let activeCallSubject = CurrentValueSubject<CallSession?, Never>(nil)
     private let incomingCallSubject = CurrentValueSubject<CallSession?, Never>(nil)
@@ -122,6 +123,7 @@ final class WebRTCCallService: NSObject, CallServicing {
             startedAt: nil
         )
         activeCallSubject.send(session)
+        ringbackTonePlayer.startOutgoingRingback()
 
         do {
             try await configureAudioSession(useSpeaker: session.isSpeakerEnabled)
@@ -146,9 +148,11 @@ final class WebRTCCallService: NSObject, CallServicing {
             )
             logger.info("Offer sent for call \(session.id.uuidString)")
         } catch let error as CallError {
+            ringbackTonePlayer.stop()
             errorSubject.send(error)
             teardownMedia()
         } catch {
+            ringbackTonePlayer.stop()
             logger.error("Failed to start call: \(error.localizedDescription)")
             errorSubject.send(.general("Unable to start the call."))
             teardownMedia()
@@ -294,6 +298,18 @@ final class WebRTCCallService: NSObject, CallServicing {
     }
 
     func toggleSpeaker() {
+        if activeCallSubject.value?.type == .video {
+            Task { @MainActor in
+                do {
+                    try await configureAudioSession(useSpeaker: true)
+                    self.updateActiveCall { $0.isSpeakerEnabled = true }
+                } catch {
+                    self.errorSubject.send(.general("Unable to update audio route."))
+                }
+            }
+            return
+        }
+
         let speakerEnabled = !(activeCallSubject.value?.isSpeakerEnabled ?? false)
 
         Task { @MainActor in
@@ -370,6 +386,7 @@ final class WebRTCCallService: NSObject, CallServicing {
 
             do {
                 try await setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp), on: peerConnection)
+                ringbackTonePlayer.stop()
                 updateActiveCall {
                     $0.status = .connected
                     $0.startedAt = $0.startedAt ?? .now
@@ -396,6 +413,7 @@ final class WebRTCCallService: NSObject, CallServicing {
             }
         case .hangup:
             logger.info("Received hangup for call \(message.callID.uuidString)")
+            ringbackTonePlayer.stop()
             let endedCallID = activeCallSubject.value?.id ?? incomingCallSubject.value?.id
             if var activeCall = activeCallSubject.value {
                 activeCall.status = .ended
@@ -491,6 +509,7 @@ final class WebRTCCallService: NSObject, CallServicing {
     }
 
     private func teardownMedia() {
+        ringbackTonePlayer.stop()
         pendingIncomingOffer = nil
         pendingAcceptedCallID = nil
         peerConnection?.close()
@@ -652,6 +671,82 @@ final class WebRTCCallService: NSObject, CallServicing {
                 }
             }
         }
+    }
+}
+
+private final class CallTonePlayer {
+    private let engine = AVAudioEngine()
+    private var sourceNode: AVAudioSourceNode?
+    private var sampleRate: Double = 44_100
+    private var sampleTime: Double = 0
+    private var isStarted = false
+
+    func startOutgoingRingback() {
+        guard !isStarted else { return }
+
+        let format = engine.outputNode.inputFormat(forBus: 0)
+        sampleRate = format.sampleRate > 0 ? format.sampleRate : 44_100
+        sampleTime = 0
+
+        let node = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            guard let self else { return noErr }
+
+            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let frameTotal = Int(frameCount)
+
+            for frame in 0..<frameTotal {
+                let time = self.sampleTime / self.sampleRate
+                let sample = self.ringbackSample(at: time)
+
+                for buffer in ablPointer {
+                    let pointer = buffer.mData?.assumingMemoryBound(to: Float.self)
+                    pointer?[frame] = sample
+                }
+
+                self.sampleTime += 1
+            }
+
+            return noErr
+        }
+
+        sourceNode = node
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: format)
+        engine.mainMixerNode.outputVolume = 0.32
+
+        do {
+            try engine.start()
+            isStarted = true
+        } catch {
+            stop()
+        }
+    }
+
+    func stop() {
+        guard isStarted else { return }
+        engine.stop()
+        if let sourceNode {
+            engine.disconnectNodeInput(sourceNode)
+            engine.detach(sourceNode)
+            self.sourceNode = nil
+        }
+        isStarted = false
+        sampleTime = 0
+    }
+
+    private func ringbackSample(at time: Double) -> Float {
+        let cadenceTime = time.truncatingRemainder(dividingBy: 8.0)
+        let isAudible = cadenceTime < 1.0 || (cadenceTime >= 4.0 && cadenceTime < 5.0)
+        guard isAudible else { return 0 }
+
+        let burstTime = cadenceTime < 1.0 ? cadenceTime : cadenceTime - 4.0
+        let fadeIn = min(1.0, burstTime / 0.04)
+        let fadeOut = min(1.0, max(0.0, (1.0 - burstTime) / 0.08))
+        let envelope = Float(fadeIn * fadeOut)
+
+        let firstTone = sin(Float(2 * Double.pi * 440.0 * time))
+        let secondTone = sin(Float(2 * Double.pi * 480.0 * time))
+        return (firstTone + secondTone) * 0.11 * envelope
     }
 }
 

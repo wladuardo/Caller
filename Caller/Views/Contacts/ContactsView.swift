@@ -8,8 +8,6 @@ private enum ContactsRoute: Hashable {
 struct ContactsView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var navigationPath: [ContactsRoute] = []
-    @State private var isShowingSearch = false
-    @State private var hasAppeared = false
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -25,9 +23,6 @@ struct ContactsView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         if !viewModel.incomingFriendRequests.isEmpty {
                             sectionHeader("Запросы", subtitle: "Ответьте на новые заявки в друзья.")
-                                .offset(y: hasAppeared ? 0 : 16)
-                                .opacity(hasAppeared ? 1 : 0)
-                                .transition(.move(edge: .top).combined(with: .opacity))
                             LazyVStack(spacing: 14) {
                                 ForEach(viewModel.incomingFriendRequests) { request in
                                     FriendRequestRow(
@@ -35,22 +30,12 @@ struct ContactsView: View {
                                         onAccept: { Task { await viewModel.acceptFriendRequest(from: request.fromUser) } },
                                         onDecline: { Task { await viewModel.declineFriendRequest(from: request.fromUser) } }
                                     )
-                                    .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
-                                    .scrollTransition(axis: .vertical) { content, phase in
-                                        content
-                                            .scaleEffect(phase.isIdentity ? 1 : 0.97)
-                                            .opacity(phase.isIdentity ? 1 : 0.7)
-                                    }
                                 }
                             }
-                            .contentTransition(.identity)
                         }
 
                         if !viewModel.outgoingFriendRequests.isEmpty {
                             sectionHeader("Отправленные", subtitle: "Ожидают подтверждения от других пользователей.")
-                                .offset(y: hasAppeared ? 0 : 16)
-                                .opacity(hasAppeared ? 1 : 0)
-                                .transition(.move(edge: .top).combined(with: .opacity))
                             LazyVStack(spacing: 14) {
                                 ForEach(viewModel.outgoingFriendRequests) { request in
                                     OutgoingFriendRequestRow(
@@ -59,24 +44,14 @@ struct ContactsView: View {
                                             Task { await viewModel.cancelOutgoingFriendRequest(to: request.toUser) }
                                         }
                                     )
-                                    .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
-                                    .scrollTransition(axis: .vertical) { content, phase in
-                                        content
-                                            .scaleEffect(phase.isIdentity ? 1 : 0.97)
-                                            .opacity(phase.isIdentity ? 1 : 0.7)
-                                    }
                                 }
                             }
-                            .contentTransition(.identity)
                         }
 
                         sectionHeader("Друзья", subtitle: "Общайтесь в чате или начинайте звонок.")
-                            .offset(y: hasAppeared ? 0 : 22)
-                            .opacity(hasAppeared ? 1 : 0)
                         
                         if viewModel.contacts.isEmpty {
                             emptyState("Друзей пока нет. Найдите пользователя по никнейму и отправьте ему запрос в друзья.")
-                                .transition(.opacity.combined(with: .scale(scale: 0.96)))
                         } else {
                             LazyVStack(spacing: 14) {
                                 ForEach(viewModel.contacts) { contact in
@@ -88,28 +63,12 @@ struct ContactsView: View {
                                         onAudioTap: { Task { await viewModel.startCall(with: contact, type: .audio) } },
                                         onVideoTap: { Task { await viewModel.startCall(with: contact, type: .video) } }
                                     )
-                                    .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
-                                    .scrollTransition(axis: .vertical) { content, phase in
-                                        content
-                                            .scaleEffect(phase.isIdentity ? 1 : 0.985)
-                                            .opacity(phase.isIdentity ? 1 : 0.78)
-                                    }
                                 }
                             }
                         }
                     }
                     .padding(20)
                 }
-            }
-            .safeAreaInset(edge: .top) {
-                HStack {
-                    Spacer()
-                    searchButton
-                        .offset(y: hasAppeared ? 0 : -8)
-                        .opacity(hasAppeared ? 1 : 0)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
             }
             .refreshable {
                 await viewModel.loadContacts()
@@ -119,12 +78,37 @@ struct ContactsView: View {
                 switch route {
                 case .chat(let user):
                     if let chatViewModel = viewModel.makeChatViewModel(for: user) {
-                        ChatView(viewModel: chatViewModel)
+                        ChatView(
+                            viewModel: chatViewModel,
+                            unreadMessageCount: viewModel.unreadMessageCounts[user.id] ?? 0,
+                            isNotificationsMuted: viewModel.isNotificationsMuted(for: user),
+                            onStartAudioCall: {
+                                Task { await viewModel.startCall(with: user, type: .audio) }
+                            },
+                            onStartVideoCall: {
+                                Task { await viewModel.startCall(with: user, type: .video) }
+                            },
+                            onSetNotificationsMuted: { isMuted in
+                                await viewModel.setNotificationsMuted(isMuted, for: user)
+                            },
+                            onRemoveFriend: {
+                                await viewModel.removeFriend(user)
+                                await MainActor.run {
+                                    navigationPath.removeAll { route in
+                                        switch route {
+                                        case .chat(let routeUser), .details(let routeUser):
+                                            return routeUser.id == user.id
+                                        }
+                                    }
+                                }
+                            }
+                        )
                     }
                 case .details(let user):
                     FriendDetailsView(
                         user: user,
                         unreadMessageCount: viewModel.unreadMessageCounts[user.id] ?? 0,
+                        isNotificationsMuted: viewModel.isNotificationsMuted(for: user),
                         onOpenChat: {
                             navigationPath.append(.chat(user))
                         },
@@ -133,6 +117,9 @@ struct ContactsView: View {
                         },
                         onStartVideoCall: {
                             Task { await viewModel.startCall(with: user, type: .video) }
+                        },
+                        onSetNotificationsMuted: { isMuted in
+                            await viewModel.setNotificationsMuted(isMuted, for: user)
                         },
                         onRemoveFriend: {
                             await viewModel.removeFriend(user)
@@ -148,30 +135,25 @@ struct ContactsView: View {
                     )
                 }
             }
-            .navigationDestination(isPresented: $isShowingSearch) {
-                UserSearchView(viewModel: viewModel)
-            }
         }
-        .toolbar((navigationPath.isEmpty && !isShowingSearch) ? .visible : .hidden, for: .tabBar)
+        .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
         .onAppear {
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.84)) {
-                hasAppeared = true
-            }
+            navigateToPendingChatIfNeeded()
+        }
+        .onChange(of: viewModel.pendingChatNavigationUser?.id) { _, userID in
+            guard userID != nil else { return }
+            navigateToPendingChatIfNeeded()
         }
     }
 
-    private var searchButton: some View {
-        Button {
-            isShowingSearch = true
-        } label: {
-            Image(systemName: "magnifyingglass")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .callerGlassButtonSurface(cornerRadius: 999, tint: .blue)
-                .shadow(color: .black.opacity(0.2), radius: 12, y: 8)
+    private func navigateToPendingChatIfNeeded() {
+        guard let user = viewModel.pendingChatNavigationUser,
+              navigationPath.last != .chat(user) else {
+            return
         }
-        .buttonStyle(.plain)
+
+        navigationPath = [.chat(user)]
+        viewModel.consumePendingChatNavigation()
     }
 
     private func sectionHeader(_ title: String, subtitle: String) -> some View {
@@ -191,21 +173,6 @@ struct ContactsView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button {
-                isShowingSearch = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.badge.plus")
-                    Text("Добавить друзей")
-                        .fontWeight(.semibold)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .callerGlassButtonSurface(cornerRadius: 16, tint: .blue)
-            }
-            .buttonStyle(.plain)
         }
         .padding(16)
         .callerGlassCard(cornerRadius: 18, tint: .cyan)

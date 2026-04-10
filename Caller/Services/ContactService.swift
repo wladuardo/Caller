@@ -11,6 +11,7 @@ protocol ContactServicing {
     func fetchUser(id: String) async throws -> AppUser?
     func updateUsername(_ username: String, for user: AppUser) async throws -> AppUser
     func updateAvatar(imageData: Data, for user: AppUser) async throws -> AppUser
+    func setNotificationsMuted(_ isMuted: Bool, for mutedUserID: String) async throws -> [String]
     func searchUser(username: String) async throws -> AppUser?
 }
 
@@ -58,7 +59,8 @@ struct MockContactService: ContactServicing {
             email: user.email,
             avatarSystemName: user.avatarSystemName,
             avatarURL: user.avatarURL,
-            username: username
+            username: username,
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs
         )
     }
 
@@ -70,8 +72,15 @@ struct MockContactService: ContactServicing {
             email: user.email,
             avatarSystemName: user.avatarSystemName,
             avatarURL: user.avatarURL,
-            username: user.username
+            username: user.username,
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs
         )
+    }
+
+    func setNotificationsMuted(_ isMuted: Bool, for mutedUserID: String) async throws -> [String] {
+        _ = isMuted
+        _ = mutedUserID
+        return []
     }
 
     func searchUser(username: String) async throws -> AppUser? {
@@ -211,7 +220,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             email: email,
             avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
             avatarURL: data["avatarURL"] as? String,
-            username: data["username"] as? String
+            username: data["username"] as? String,
+            mutedNotificationUserIDs: data["mutedNotificationUserIDs"] as? [String] ?? []
         )
     }
 
@@ -417,13 +427,14 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             email: user.email,
             avatarSystemName: user.avatarSystemName,
             avatarURL: user.avatarURL,
-            username: username
+            username: username,
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs
         )
     }
 
     func updateAvatar(imageData: Data, for user: AppUser) async throws -> AppUser {
 #if canImport(FirebaseStorage)
-        let normalizedData = normalizedImageData(from: imageData)
+        let normalizedData = await normalizedImageDataOffMain(from: imageData)
         let storageRef = Storage.storage().reference().child("avatars/\(user.id)/\(UUID().uuidString).jpg")
         let metadata = StorageMetadata()
         metadata.contentType = "image/jpeg"
@@ -437,7 +448,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             email: user.email,
             avatarSystemName: user.avatarSystemName,
             avatarURL: downloadURL.absoluteString,
-            username: user.username
+            username: user.username,
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs
         )
 
         let usersRef = db.collection("users").document(user.id)
@@ -491,8 +503,26 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             email: email,
             avatarSystemName: userData["avatarSystemName"] as? String ?? "person.crop.circle.fill",
             avatarURL: userData["avatarURL"] as? String,
-            username: userData["username"] as? String
+            username: userData["username"] as? String,
+            mutedNotificationUserIDs: userData["mutedNotificationUserIDs"] as? [String] ?? []
         )
+    }
+
+    func setNotificationsMuted(_ isMuted: Bool, for mutedUserID: String) async throws -> [String] {
+        guard let currentUserID = currentUserProvider()?.id else { return [] }
+
+        let userRef = db.collection("users").document(currentUserID)
+        let update: [String: Any] = [
+            "mutedNotificationUserIDs": isMuted
+                ? FieldValue.arrayUnion([mutedUserID])
+                : FieldValue.arrayRemove([mutedUserID]),
+            "updatedAt": Timestamp(date: .now)
+        ]
+
+        try await userRef.setData(update, merge: true)
+
+        let updatedDocument = try await userRef.getDocument()
+        return updatedDocument.data()?["mutedNotificationUserIDs"] as? [String] ?? []
     }
 
     func acceptFriendRequest(from user: AppUser) async throws {
@@ -729,7 +759,13 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
         }
     }
 
-    private func normalizedImageData(from imageData: Data) -> Data {
+    private func normalizedImageDataOffMain(from imageData: Data) async -> Data {
+        await Task.detached(priority: .userInitiated) {
+            Self.normalizedImageData(from: imageData)
+        }.value
+    }
+
+    nonisolated private static func normalizedImageData(from imageData: Data) -> Data {
         let maxUploadBytes = 4_500_000
 
         guard let image = UIImage(data: imageData) else {
@@ -749,7 +785,7 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
         return preparedImage.jpegData(compressionQuality: 0.2) ?? imageData
     }
 
-    private func resizedImageIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage? {
+    nonisolated private static func resizedImageIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage? {
         let size = image.size
         let largestSide = max(size.width, size.height)
 

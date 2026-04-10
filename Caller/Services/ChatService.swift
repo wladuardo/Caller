@@ -6,6 +6,7 @@ import FirebaseStorage
 import UIKit
 
 protocol ChatServicing {
+    func cachedMessages(with user: AppUser, currentUser: AppUser) async -> [ChatMessage]
     func observeMessages(with user: AppUser, currentUser: AppUser) -> AsyncStream<[ChatMessage]>
     func observeTypingStatus(with user: AppUser, currentUser: AppUser) -> AsyncStream<Bool>
     func observeConversationSummaries(for currentUser: AppUser) -> AsyncStream<[ChatConversationSummary]>
@@ -17,9 +18,9 @@ protocol ChatServicing {
 }
 
 struct MockChatService: ChatServicing {
-    func observeMessages(with user: AppUser, currentUser: AppUser) -> AsyncStream<[ChatMessage]> {
+    func cachedMessages(with user: AppUser, currentUser: AppUser) async -> [ChatMessage] {
         let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
-        let messages = [
+        return [
             ChatMessage(
                 id: "welcome-1",
                 conversationID: conversationID,
@@ -41,10 +42,15 @@ struct MockChatService: ChatServicing {
                 isReadByRecipient: true
             )
         ]
+    }
 
+    func observeMessages(with user: AppUser, currentUser: AppUser) -> AsyncStream<[ChatMessage]> {
         return AsyncStream { continuation in
-            continuation.yield(messages)
-            continuation.finish()
+            Task {
+                let messages = await cachedMessages(with: user, currentUser: currentUser)
+                continuation.yield(messages)
+                continuation.finish()
+            }
         }
     }
 
@@ -113,6 +119,11 @@ final class FirebaseChatService: ChatServicing {
     init(db: Firestore = Firestore.firestore(), logger: Logger = Logger()) {
         self.db = db
         self.logger = logger
+    }
+
+    func cachedMessages(with user: AppUser, currentUser: AppUser) async -> [ChatMessage] {
+        let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
+        return await cache.messages(for: conversationID)
     }
 
     func observeMessages(with user: AppUser, currentUser: AppUser) -> AsyncStream<[ChatMessage]> {
@@ -457,7 +468,7 @@ final class FirebaseChatService: ChatServicing {
     ) async throws -> ChatAttachment? {
         guard let attachment else { return nil }
 #if canImport(FirebaseStorage)
-        let normalizedPayload = normalizedAttachmentPayload(for: attachment)
+        let normalizedPayload = await normalizedAttachmentPayload(for: attachment)
         let sanitizedFileName = sanitizedAttachmentFileName(normalizedPayload.fileName)
         let storagePath = "chatAttachments/\(conversationID)/\(messageID)/\(sanitizedFileName)"
         let storageRef = Storage.storage().reference().child(storagePath)
@@ -489,10 +500,15 @@ final class FirebaseChatService: ChatServicing {
         return sanitized.isEmpty ? UUID().uuidString : sanitized
     }
 
-    private func normalizedAttachmentPayload(for attachment: ChatDraftAttachment) -> ChatDraftAttachment {
-        guard attachment.kind == .image,
-              let image = UIImage(data: attachment.data),
-              let normalizedData = normalizedImageData(from: image) else {
+    private func normalizedAttachmentPayload(for attachment: ChatDraftAttachment) async -> ChatDraftAttachment {
+        guard attachment.kind == .image else {
+            return attachment
+        }
+
+        let data = attachment.data
+        guard let normalizedData = await Task.detached(priority: .userInitiated, operation: {
+            Self.normalizedImageData(from: data)
+        }).value else {
             return attachment
         }
 
@@ -515,7 +531,11 @@ final class FirebaseChatService: ChatServicing {
         )
     }
 
-    private func normalizedImageData(from image: UIImage) -> Data? {
+    nonisolated private static func normalizedImageData(from imageData: Data) -> Data? {
+        guard let image = UIImage(data: imageData) else {
+            return nil
+        }
+
         let maxDimension: CGFloat = 1800
         let largestSide = max(image.size.width, image.size.height)
         let scale = largestSide > maxDimension ? maxDimension / largestSide : 1

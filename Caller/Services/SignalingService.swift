@@ -66,6 +66,7 @@ final class WebSocketSignalingService: SignalingServicing {
 final class FirebaseFirestoreSignalingService: SignalingServicing {
     private let db: Firestore
     private let collectionName: String
+    private let incomingCallNotificationCollectionName: String
     private let logger = Logger()
     private var listener: ListenerRegistration?
     private var continuation: AsyncStream<SignalingMessage>.Continuation?
@@ -81,9 +82,14 @@ final class FirebaseFirestoreSignalingService: SignalingServicing {
         }
     }()
 
-    init(db: Firestore = Firestore.firestore(), collectionName: String = "signalingMessages") {
+    init(
+        db: Firestore = Firestore.firestore(),
+        collectionName: String = "signalingMessages",
+        incomingCallNotificationCollectionName: String = "incomingCallNotifications"
+    ) {
         self.db = db
         self.collectionName = collectionName
+        self.incomingCallNotificationCollectionName = incomingCallNotificationCollectionName
     }
 
     func connect(userID: String) async throws {
@@ -143,6 +149,16 @@ final class FirebaseFirestoreSignalingService: SignalingServicing {
             "sentAt": Timestamp(date: message.sentAt),
             "payload": payload
         ])
+
+        if case .offer(_, let callType) = message.payload {
+            try await db.collection(incomingCallNotificationCollectionName).addDocument(data: [
+                "toUserID": message.toUserID,
+                "fromUserID": message.fromUserID,
+                "callID": message.callID.uuidString,
+                "callType": callType.rawValue,
+                "sentAt": Timestamp(date: message.sentAt)
+            ])
+        }
     }
 
     private func flushBufferedMessages() {

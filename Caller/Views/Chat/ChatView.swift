@@ -1,20 +1,44 @@
 import PhotosUI
 import QuickLook
 import SwiftUI
+import UIKit
 
 struct ChatView: View {
     @StateObject private var viewModel: ChatViewModel
     @FocusState private var isComposerFocused: Bool
     private let typingIndicatorID = "typing-indicator"
+    private let unreadMessageCount: Int
+    private let isNotificationsMuted: Bool
+    private let onStartAudioCall: (() -> Void)?
+    private let onStartVideoCall: (() -> Void)?
+    private let onSetNotificationsMuted: ((Bool) async -> Void)?
+    private let onRemoveFriend: (() async -> Void)?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isPresentingFileImporter = false
     @State private var isPresentingAttachmentOptions = false
     @State private var isPresentingPhotosPicker = false
     @State private var attachmentPreview: ChatAttachmentPreview?
     @State private var isPreparingAttachmentPreview = false
+    @State private var isShowingProfile = false
+    @State private var keyboardAnimationDuration = 0.25
+    @State private var keyboardScrollTask: Task<Void, Never>?
     
-    init(viewModel: ChatViewModel) {
+    init(
+        viewModel: ChatViewModel,
+        unreadMessageCount: Int = 0,
+        isNotificationsMuted: Bool = false,
+        onStartAudioCall: (() -> Void)? = nil,
+        onStartVideoCall: (() -> Void)? = nil,
+        onSetNotificationsMuted: ((Bool) async -> Void)? = nil,
+        onRemoveFriend: (() async -> Void)? = nil
+    ) {
         _viewModel = StateObject(wrappedValue: viewModel)
+        self.unreadMessageCount = unreadMessageCount
+        self.isNotificationsMuted = isNotificationsMuted
+        self.onStartAudioCall = onStartAudioCall
+        self.onStartVideoCall = onStartVideoCall
+        self.onSetNotificationsMuted = onSetNotificationsMuted
+        self.onRemoveFriend = onRemoveFriend
     }
     
     var body: some View {
@@ -39,24 +63,48 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 2) {
-                    Text(viewModel.participant.displayName)
-                        .font(.headline)
-                    ZStack {
-                        Text(viewModel.participant.email)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .opacity(viewModel.isParticipantTyping ? 0 : 1)
-                            .offset(y: viewModel.isParticipantTyping ? -6 : 0)
+                Button {
+                    isShowingProfile = true
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(viewModel.participant.displayName)
+                            .font(.headline)
+                            .lineLimit(1)
+                        ZStack {
+                            Text(chatSubtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .opacity(viewModel.isParticipantTyping ? 0 : 1)
+                                .offset(y: viewModel.isParticipantTyping ? -6 : 0)
 
-                        Text("Печатает...")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.green.opacity(0.9))
-                            .opacity(viewModel.isParticipantTyping ? 1 : 0)
-                            .offset(y: viewModel.isParticipantTyping ? 0 : 6)
+                            Text("Печатает...")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.green.opacity(0.9))
+                                .opacity(viewModel.isParticipantTyping ? 1 : 0)
+                                .offset(y: viewModel.isParticipantTyping ? 0 : 6)
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: viewModel.isParticipantTyping)
                     }
-                    .animation(.easeInOut(duration: 0.2), value: viewModel.isParticipantTyping)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: Capsule())
                 }
+                .buttonStyle(.plain)
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isShowingProfile = true
+                } label: {
+                    UserAvatarView(
+                        user: viewModel.participant,
+                        size: 34,
+                        iconSize: 18,
+                        iconTint: .white
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
         .task {
@@ -69,6 +117,7 @@ struct ChatView: View {
             viewModel.handleDraftChanged(newValue)
         }
         .onDisappear {
+            keyboardScrollTask?.cancel()
             viewModel.stopObserving()
         }
         .alert("Чат", isPresented: Binding(
@@ -93,6 +142,48 @@ struct ChatView: View {
         .sheet(item: filePreviewBinding) { preview in
             FileQuickLookPreview(fileURL: preview.fileURL, title: preview.title)
         }
+        .sheet(isPresented: $isShowingProfile) {
+            NavigationStack {
+                FriendDetailsView(
+                    user: viewModel.participant,
+                    unreadMessageCount: unreadMessageCount,
+                    isNotificationsMuted: isNotificationsMuted,
+                    onOpenChat: {
+                        isShowingProfile = false
+                    },
+                    onStartAudioCall: {
+                        isShowingProfile = false
+                        onStartAudioCall?()
+                    },
+                    onStartVideoCall: {
+                        isShowingProfile = false
+                        onStartVideoCall?()
+                    },
+                    onSetNotificationsMuted: { isMuted in
+                        await onSetNotificationsMuted?(isMuted)
+                    },
+                    onRemoveFriend: {
+                        guard let onRemoveFriend else { return }
+                        await onRemoveFriend()
+                    }
+                )
+            }
+            .presentationDragIndicator(.visible)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            updateKeyboardAnimationDuration(from: notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+            updateKeyboardAnimationDuration(from: notification)
+        }
+    }
+
+    private var chatSubtitle: String {
+        if let username = viewModel.participant.username,
+           !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "@\(username)"
+        }
+        return viewModel.participant.email
     }
     
     private var messageList: some View {
@@ -143,17 +234,22 @@ struct ChatView: View {
             }
             .onChange(of: isComposerFocused) { _, isFocused in
                 guard isFocused, viewModel.screenState == .content else { return }
-                scrollToBottom(using: proxy, animated: true)
+                scheduleScrollToBottomAfterKeyboardAnimation(using: proxy)
             }
             .onChange(of: viewModel.isParticipantTyping) { _, isTyping in
                 guard isTyping else { return }
                 scrollToBottom(using: proxy, animated: true)
             }
             .overlay {
-                switch viewModel.screenState {
+                if viewModel.isShowingDelayedLoader {
+                    if viewModel.isShowingDelayedLoader {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                } else {
+                    switch viewModel.screenState {
                 case .loading:
-                    ProgressView()
-                        .tint(.white)
+                    EmptyView()
                 case .empty:
                     if !viewModel.isParticipantTyping {
                         ContentUnavailableView(
@@ -172,6 +268,7 @@ struct ChatView: View {
                     .foregroundStyle(.white.opacity(0.8))
                 case .content:
                     EmptyView()
+                }
                 }
             }
         }
@@ -313,6 +410,27 @@ struct ChatView: View {
         } else {
             proxy.scrollTo(targetID, anchor: .bottom)
         }
+    }
+
+    private func scheduleScrollToBottomAfterKeyboardAnimation(using proxy: ScrollViewProxy) {
+        keyboardScrollTask?.cancel()
+        keyboardScrollTask = Task {
+            let delay = max(keyboardAnimationDuration, 0)
+            if delay > 0 {
+                try? await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                scrollToBottom(using: proxy, animated: true)
+            }
+        }
+    }
+
+    private func updateKeyboardAnimationDuration(from notification: Notification) {
+        guard let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else {
+            return
+        }
+        keyboardAnimationDuration = duration
     }
 
     private var canSendMessage: Bool {

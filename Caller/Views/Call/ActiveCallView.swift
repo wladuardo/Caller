@@ -75,7 +75,9 @@ struct ActiveCallView: View {
 
                 HStack(spacing: 18) {
                     CallControlButton(systemName: call.isMuted ? "mic.slash.fill" : "mic.fill", isActive: call.isMuted, action: onToggleMute)
-                    CallControlButton(systemName: call.isSpeakerEnabled ? "speaker.wave.3.fill" : "speaker.slash.fill", isActive: call.isSpeakerEnabled, action: onToggleSpeaker)
+                    if call.type == .audio {
+                        CallControlButton(systemName: call.isSpeakerEnabled ? "speaker.wave.3.fill" : "speaker.slash.fill", isActive: call.isSpeakerEnabled, action: onToggleSpeaker)
+                    }
                     if call.type == .video {
                         CallControlButton(systemName: call.isCameraEnabled ? "video.fill" : "video.slash.fill", isActive: call.isCameraEnabled, action: onToggleCamera)
                         CallControlButton(systemName: "arrow.triangle.2.circlepath.camera.fill", isActive: false, action: onSwitchCamera)

@@ -1,11 +1,11 @@
 import Foundation
 
-enum ChatAttachmentKind: String, Codable, Equatable {
+enum ChatAttachmentKind: String, Codable, Equatable, Sendable {
     case image
     case file
 }
 
-struct ChatAttachment: Codable, Equatable {
+struct ChatAttachment: Codable, Equatable, Sendable {
     let kind: ChatAttachmentKind
     let fileName: String
     let storagePath: String
@@ -14,7 +14,7 @@ struct ChatAttachment: Codable, Equatable {
     let fileSize: Int?
 }
 
-struct ChatDraftAttachment: Identifiable, Equatable {
+struct ChatDraftAttachment: Identifiable, Equatable, Sendable {
     let id = UUID()
     let kind: ChatAttachmentKind
     let fileName: String
@@ -26,7 +26,7 @@ struct ChatDraftAttachment: Identifiable, Equatable {
     }
 }
 
-struct ChatMessage: Identifiable, Codable, Equatable {
+struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let conversationID: String
     let senderID: String
@@ -49,7 +49,7 @@ struct ChatMessage: Identifiable, Codable, Equatable {
     }
 }
 
-struct ChatConversationSummary: Identifiable, Equatable {
+struct ChatConversationSummary: Identifiable, Equatable, Sendable {
     let id: String
     let participantIDs: [String]
     let lastMessageText: String
@@ -62,7 +62,7 @@ struct ChatConversationSummary: Identifiable, Equatable {
     }
 }
 
-struct UnreadMessageSummary: Identifiable, Equatable {
+struct UnreadMessageSummary: Identifiable, Equatable, Sendable {
     let id: String
     let senderID: String
     let count: Int

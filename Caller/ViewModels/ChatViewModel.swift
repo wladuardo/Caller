@@ -18,6 +18,7 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var isParticipantTyping = false
     @Published private(set) var selectedAttachment: ChatDraftAttachment?
     @Published private(set) var isSendingAttachment = false
+    @Published private(set) var isShowingDelayedLoader = false
 
     let currentUser: AppUser
     let participant: AppUser
@@ -28,7 +29,9 @@ final class ChatViewModel: ObservableObject {
     private var observationTask: Task<Void, Never>?
     private var typingObservationTask: Task<Void, Never>?
     private var typingDebounceTask: Task<Void, Never>?
+    private var delayedLoadingTask: Task<Void, Never>?
     private var lastReportedTypingState = false
+    private var hasResolvedInitialLoad = false
 
     init(
         currentUser: AppUser,
@@ -48,21 +51,38 @@ final class ChatViewModel: ObservableObject {
         observationTask?.cancel()
         typingObservationTask?.cancel()
         typingDebounceTask?.cancel()
+        delayedLoadingTask?.cancel()
     }
 
     func startObserving() {
         guard observationTask == nil else { return }
         onAppear?()
-        screenState = .loading
+        delayedLoadingTask?.cancel()
+        isShowingDelayedLoader = false
+        hasResolvedInitialLoad = false
         startObservingTyping()
 
         observationTask = Task { [weak self] in
             guard let self else { return }
 
+            let cachedMessages = await chatService.cachedMessages(with: participant, currentUser: currentUser)
+            if Task.isCancelled { return }
+
+            messages = cachedMessages
+            screenState = cachedMessages.isEmpty ? .empty : .content
+
+            if cachedMessages.isEmpty {
+                scheduleDelayedLoader()
+            } else {
+                hasResolvedInitialLoad = true
+            }
+
             do {
                 try await chatService.prepareConversation(with: participant, currentUser: currentUser)
                 try await chatService.markConversationAsRead(with: participant, currentUser: currentUser)
             } catch {
+                delayedLoadingTask?.cancel()
+                isShowingDelayedLoader = false
                 let message = error.localizedDescription
                 errorMessage = message
                 screenState = .error(message)
@@ -72,6 +92,9 @@ final class ChatViewModel: ObservableObject {
                 if Task.isCancelled {
                     break
                 }
+                hasResolvedInitialLoad = true
+                delayedLoadingTask?.cancel()
+                isShowingDelayedLoader = false
                 self.messages = messages
                 self.screenState = messages.isEmpty ? .empty : .content
                 do {
@@ -90,6 +113,10 @@ final class ChatViewModel: ObservableObject {
         typingObservationTask = nil
         typingDebounceTask?.cancel()
         typingDebounceTask = nil
+        delayedLoadingTask?.cancel()
+        delayedLoadingTask = nil
+        isShowingDelayedLoader = false
+        hasResolvedInitialLoad = false
         isParticipantTyping = false
         Task {
             try? await chatService.setTyping(false, with: participant, currentUser: currentUser)
@@ -175,6 +202,17 @@ final class ChatViewModel: ObservableObject {
 
     func dismissError() {
         errorMessage = nil
+    }
+
+    private func scheduleDelayedLoader() {
+        delayedLoadingTask?.cancel()
+        delayedLoadingTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let self, !Task.isCancelled, !hasResolvedInitialLoad, messages.isEmpty else {
+                return
+            }
+            isShowingDelayedLoader = true
+        }
     }
 
     private func startObservingTyping() {

@@ -5,7 +5,13 @@ import Foundation
 import UIKit
 import UserNotifications
 
+enum NotificationEvent {
+    case openChat(userID: String)
+    case openIncomingCall(VoIPIncomingCallPayload)
+}
+
 protocol NotificationServicing {
+    var events: AsyncStream<NotificationEvent> { get }
     func configure()
     func requestAuthorization() async
     func updateCurrentUser(_ user: AppUser?) async
@@ -18,6 +24,15 @@ final class NotificationService: NSObject, NotificationServicing {
     private let logger = Logger()
     private var currentUserID: String?
     private var fcmToken: String?
+    private var eventsContinuation: AsyncStream<NotificationEvent>.Continuation?
+    private var bufferedEvents: [NotificationEvent] = []
+
+    lazy var events: AsyncStream<NotificationEvent> = {
+        AsyncStream { continuation in
+            self.eventsContinuation = continuation
+            self.flushBufferedEvents()
+        }
+    }()
 
     private override init() {}
 
@@ -54,6 +69,12 @@ final class NotificationService: NSObject, NotificationServicing {
 
     func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) {
         logger.info("Received remote notification payload: \(userInfo)")
+    }
+
+    func handleNotificationResponse(_ userInfo: [AnyHashable: Any]) {
+        handleRemoteNotification(userInfo)
+        guard let event = makeNotificationEvent(from: userInfo) else { return }
+        yield(event)
     }
 
     private func updateFCMToken(_ token: String) {
@@ -96,6 +117,66 @@ final class NotificationService: NSObject, NotificationServicing {
             logger.error("Failed to remove FCM token: \(error.localizedDescription)")
         }
     }
+
+    private func makeNotificationEvent(from userInfo: [AnyHashable: Any]) -> NotificationEvent? {
+        let rawType = (userInfo["type"] as? String) ?? ((userInfo["data"] as? [String: Any])?["type"] as? String)
+
+        switch rawType {
+        case "chat_message":
+            guard let userID = (userInfo["senderId"] as? String) ??
+                    ((userInfo["data"] as? [String: Any])?["senderId"] as? String) else {
+                return nil
+            }
+            return .openChat(userID: userID)
+        case "incoming_call":
+            return makeIncomingCallEvent(from: userInfo)
+        default:
+            return nil
+        }
+    }
+
+    private func makeIncomingCallEvent(from userInfo: [AnyHashable: Any]) -> NotificationEvent? {
+        let callIDString = (userInfo["callId"] as? String) ??
+            ((userInfo["data"] as? [String: Any])?["callId"] as? String)
+        let callerID = (userInfo["callerId"] as? String) ??
+            ((userInfo["data"] as? [String: Any])?["callerId"] as? String) ?? ""
+        let callerName = (userInfo["callerName"] as? String) ??
+            ((userInfo["data"] as? [String: Any])?["callerName"] as? String) ??
+            "Неизвестный пользователь"
+        let callTypeRawValue = (userInfo["callType"] as? String) ??
+            ((userInfo["data"] as? [String: Any])?["callType"] as? String) ??
+            CallType.audio.rawValue
+
+        guard let callIDString,
+              let callID = UUID(uuidString: callIDString),
+              let callType = CallType(rawValue: callTypeRawValue) else {
+            return nil
+        }
+
+        return .openIncomingCall(
+            VoIPIncomingCallPayload(
+                callID: callID,
+                callerID: callerID,
+                callerName: callerName,
+                callerEmail: "",
+                type: callType
+            )
+        )
+    }
+
+    private func yield(_ event: NotificationEvent) {
+        if let eventsContinuation {
+            eventsContinuation.yield(event)
+        } else {
+            bufferedEvents.append(event)
+        }
+    }
+
+    private func flushBufferedEvents() {
+        guard let eventsContinuation else { return }
+        bufferedEvents.forEach { eventsContinuation.yield($0) }
+        bufferedEvents.removeAll()
+    }
 }
 
 extension NotificationService: UNUserNotificationCenterDelegate {
@@ -112,7 +193,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        handleRemoteNotification(response.notification.request.content.userInfo)
+        handleNotificationResponse(response.notification.request.content.userInfo)
         completionHandler()
     }
 }

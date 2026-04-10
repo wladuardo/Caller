@@ -29,7 +29,7 @@ struct SettingsView: View {
                     .padding(20)
                 }
             }
-            .navigationTitle("Настройки")
+            .navigationTitle("Профиль")
             .navigationBarTitleDisplayMode(.inline)
         }
         .onChange(of: selectedPhoto) { _, newValue in
@@ -40,7 +40,7 @@ struct SettingsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Аккаунт")
+            Text("Профиль")
                 .font(.system(size: 34, weight: .bold, design: .rounded))
             Text("Управляйте профилем и текущей сессией в одном месте.")
                 .font(.subheadline)
@@ -89,11 +89,6 @@ struct SettingsView: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.blue)
                 }
-                Text("ID пользователя: \(currentUser.id)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
             }
 
             Spacer()
@@ -103,37 +98,42 @@ struct SettingsView: View {
     }
 
     private var actionsCard: some View {
-        VStack(spacing: 12) {
-            if currentUser.username?.isEmpty == false {
-                ShareLink(item: shareMessage, subject: Text("Мой никнейм в Caller")) {
-                    SettingsActionRow(
-                        title: "Поделиться никнеймом",
-                        subtitle: "Отправить свой никнейм, чтобы с вами могли быстро связаться.",
-                        systemName: "square.and.arrow.up",
-                        tint: .cyan
-                    )
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                if currentUser.username?.isEmpty == false {
+                    ShareLink(item: shareMessage, subject: Text("Мой никнейм в Caller")) {
+                        compactActionButton(
+                            title: "Поделиться",
+                            systemName: "square.and.arrow.up",
+                            tint: .cyan
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
+
+                compactActionButton(
+                    title: "Выйти",
+                    systemName: "rectangle.portrait.and.arrow.right",
+                    tint: .blue,
+                    action: onSignOut
+                )
+
+                compactActionButton(
+                    title: "Удалить аккаунт",
+                    systemName: "trash.fill",
+                    tint: .red,
+                    action: onDeleteAccount
+                )
             }
-
-            SettingsActionButton(
-                title: "Выйти",
-                subtitle: "Завершить текущую сессию на этом устройстве.",
-                systemName: "rectangle.portrait.and.arrow.right",
-                tint: .blue,
-                action: onSignOut
-            )
-
-            SettingsActionButton(
-                title: "Удалить аккаунт",
-                subtitle: "Удалить этот аккаунт. Firebase может потребовать повторный вход.",
-                systemName: "trash.fill",
-                tint: .red,
-                action: onDeleteAccount
-            )
         }
         .padding(18)
         .callerGlassCard(cornerRadius: 24, tint: .blue)
+    }
+
+    private var inviteQRCodePayload: String {
+        let username = currentUser.username ?? ""
+        return "caller://invite?username=\(username)"
     }
 
     private var shareMessage: String {
@@ -159,65 +159,54 @@ struct SettingsView: View {
             await onUpdateAvatar(data)
         }
     }
-}
 
-private struct SettingsActionButton: View {
-    let title: String
-    let subtitle: String
-    let systemName: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            SettingsActionRow(
-                title: title,
-                subtitle: subtitle,
-                systemName: systemName,
-                tint: tint
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct SettingsActionRow: View {
-    let title: String
-    let subtitle: String
-    let systemName: String
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: systemName)
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(width: 42, height: 42)
-                .callerGlassButtonSurface(cornerRadius: 14, tint: tint)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
+    private func compactActionButton(
+        title: String,
+        systemName: String,
+        tint: Color,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        Group {
+            if let action {
+                Button(action: action) {
+                    compactActionContent(
+                        title: title,
+                        systemName: systemName,
+                        tint: tint
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                compactActionContent(
+                    title: title,
+                    systemName: systemName,
+                    tint: tint
+                )
             }
-
-            Spacer()
         }
-        .padding(14)
-        .callerGlassCard(cornerRadius: 18, tint: tint)
     }
-}
 
-#Preview {
-    SettingsView(
-        currentUser: AppUser(id: "me", displayName: "Алекс Джонсон", email: "alex@example.com", avatarSystemName: "person.crop.circle.fill"),
-        onUpdateAvatar: { _ in },
-        onSignOut: {},
-        onDeleteAccount: {}
-    )
-    .preferredColorScheme(.dark)
+    private func compactActionContent(
+        title: String,
+        systemName: String,
+        tint: Color
+    ) -> some View {
+        VStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+
+                Image(systemName: systemName)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(tint)
+            }
+            .frame(height: 64)
+
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+    }
 }

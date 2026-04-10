@@ -3,12 +3,20 @@ import SwiftUI
 struct MainTabView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var isShowingDeleteConfirmation = false
+    @State private var selectedTab = 0
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             ContactsView(viewModel: viewModel)
+                .tag(0)
                 .tabItem {
-                    Label("Главная", systemImage: "person.3.fill")
+                    Label("Друзья", systemImage: "person.3.fill")
+                }
+
+            UserSearchView(viewModel: viewModel)
+                .tag(1)
+                .tabItem {
+                    Label("Поиск", systemImage: "magnifyingglass")
                 }
 
             if let currentUser = viewModel.currentUser {
@@ -24,10 +32,15 @@ struct MainTabView: View {
                         isShowingDeleteConfirmation = true
                     }
                 )
+                .tag(2)
                 .tabItem {
-                    Label("Настройки", systemImage: "gearshape.fill")
+                    Label("Профиль", systemImage: "gearshape.fill")
                 }
             }
+        }
+        .onChange(of: viewModel.pendingChatNavigationUser?.id) { _, userID in
+            guard userID != nil else { return }
+            selectedTab = 0
         }
         .alert("Удалить аккаунт?", isPresented: $isShowingDeleteConfirmation) {
             Button("Отмена", role: .cancel) {}
