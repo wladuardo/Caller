@@ -1,5 +1,12 @@
 import Foundation
 
+struct SharedLocation: Codable, Equatable, Hashable, Sendable {
+    let latitude: Double
+    let longitude: Double
+    let updatedAt: Date
+    let horizontalAccuracy: Double?
+}
+
 struct AppUser: Identifiable, Codable, Equatable, Hashable {
     let id: String
     let displayName: String
@@ -8,6 +15,7 @@ struct AppUser: Identifiable, Codable, Equatable, Hashable {
     let avatarURL: String?
     let username: String?
     let mutedNotificationUserIDs: [String]
+    let sharedLocation: SharedLocation?
 
     init(
         id: String,
@@ -16,7 +24,8 @@ struct AppUser: Identifiable, Codable, Equatable, Hashable {
         avatarSystemName: String,
         avatarURL: String? = nil,
         username: String? = nil,
-        mutedNotificationUserIDs: [String] = []
+        mutedNotificationUserIDs: [String] = [],
+        sharedLocation: SharedLocation? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -25,5 +34,6 @@ struct AppUser: Identifiable, Codable, Equatable, Hashable {
         self.avatarURL = avatarURL
         self.username = username
         self.mutedNotificationUserIDs = mutedNotificationUserIDs
+        self.sharedLocation = sharedLocation
     }
 }

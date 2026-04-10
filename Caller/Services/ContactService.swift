@@ -221,7 +221,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
             avatarURL: data["avatarURL"] as? String,
             username: data["username"] as? String,
-            mutedNotificationUserIDs: data["mutedNotificationUserIDs"] as? [String] ?? []
+            mutedNotificationUserIDs: data["mutedNotificationUserIDs"] as? [String] ?? [],
+            sharedLocation: nil
         )
     }
 
@@ -690,13 +691,28 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                 return nil
             }
 
+            let sharedLocation: SharedLocation?
+            if let rawLocation = document["sharedLocation"] as? [String: Any],
+               let latitude = rawLocation["latitude"] as? Double,
+               let longitude = rawLocation["longitude"] as? Double {
+                sharedLocation = SharedLocation(
+                    latitude: latitude,
+                    longitude: longitude,
+                    updatedAt: (rawLocation["updatedAt"] as? Timestamp)?.dateValue() ?? .now,
+                    horizontalAccuracy: rawLocation["horizontalAccuracy"] as? Double
+                )
+            } else {
+                sharedLocation = nil
+            }
+
             return AppUser(
                 id: id,
                 displayName: displayName,
                 email: email,
                 avatarSystemName: document["avatarSystemName"] as? String ?? "person.crop.circle.fill",
                 avatarURL: document["avatarURL"] as? String,
-                username: document["username"] as? String
+                username: document["username"] as? String,
+                sharedLocation: sharedLocation
             )
         }
     }

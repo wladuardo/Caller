@@ -7,6 +7,7 @@ struct FriendDetailsView: View {
     let onOpenChat: () -> Void
     let onStartAudioCall: () -> Void
     let onStartVideoCall: () -> Void
+    let onShowOnMap: () -> Void
     let onSetNotificationsMuted: (Bool) async -> Void
     let onRemoveFriend: () async -> Void
 
@@ -104,6 +105,17 @@ struct FriendDetailsView: View {
                         updateNotificationsMuted(!notificationsMuted)
                     }
                 )
+            }
+
+            HStack(spacing: 12) {
+                compactActionButton(
+                    title: "На карте",
+                    systemName: "location.fill",
+                    tint: .cyan,
+                    action: onShowOnMap
+                )
+
+                Spacer(minLength: 0)
             }
 
             Text(

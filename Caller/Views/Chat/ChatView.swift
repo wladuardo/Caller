@@ -11,6 +11,7 @@ struct ChatView: View {
     private let isNotificationsMuted: Bool
     private let onStartAudioCall: (() -> Void)?
     private let onStartVideoCall: (() -> Void)?
+    private let onShowOnMap: (() -> Void)?
     private let onSetNotificationsMuted: ((Bool) async -> Void)?
     private let onRemoveFriend: (() async -> Void)?
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -29,6 +30,7 @@ struct ChatView: View {
         isNotificationsMuted: Bool = false,
         onStartAudioCall: (() -> Void)? = nil,
         onStartVideoCall: (() -> Void)? = nil,
+        onShowOnMap: (() -> Void)? = nil,
         onSetNotificationsMuted: ((Bool) async -> Void)? = nil,
         onRemoveFriend: (() async -> Void)? = nil
     ) {
@@ -37,6 +39,7 @@ struct ChatView: View {
         self.isNotificationsMuted = isNotificationsMuted
         self.onStartAudioCall = onStartAudioCall
         self.onStartVideoCall = onStartVideoCall
+        self.onShowOnMap = onShowOnMap
         self.onSetNotificationsMuted = onSetNotificationsMuted
         self.onRemoveFriend = onRemoveFriend
     }
@@ -158,6 +161,10 @@ struct ChatView: View {
                     onStartVideoCall: {
                         isShowingProfile = false
                         onStartVideoCall?()
+                    },
+                    onShowOnMap: {
+                        isShowingProfile = false
+                        onShowOnMap?()
                     },
                     onSetNotificationsMuted: { isMuted in
                         await onSetNotificationsMuted?(isMuted)

@@ -8,6 +8,7 @@ final class AppEnvironment {
     let chatService: ChatServicing
     let notificationService: NotificationServicing
     let permissionService: PermissionServicing
+    let locationService: LocationSharingServicing
     let signalingService: SignalingServicing
     let callService: CallServicing
     let logger: Logger
@@ -36,11 +37,13 @@ final class AppEnvironment {
         )
         let resolvedChatService = Self.makeChatService(configuration: configuration, logger: logger)
         let resolvedNotificationService = Self.makeNotificationService()
+        let resolvedLocationService = Self.makeLocationService(configuration: configuration, logger: logger)
         self.authService = resolvedAuthService
         self.contactService = resolvedContactService
         self.friendService = resolvedFriendService
         self.chatService = resolvedChatService
         self.notificationService = resolvedNotificationService
+        self.locationService = resolvedLocationService
 
         let resolvedSignalingService = signalingService ?? Self.makeSignalingService(
             configuration: configuration,
@@ -120,5 +123,16 @@ final class AppEnvironment {
         let service = NotificationService.shared
         service.configure()
         return service
+    }
+
+    private static func makeLocationService(
+        configuration: AppConfiguration,
+        logger: Logger
+    ) -> LocationSharingServicing {
+        if configuration.hasFirebaseConfiguration, FirebaseApp.app() != nil {
+            return FirebaseLocationSharingService(logger: logger)
+        } else {
+            return MockLocationSharingService()
+        }
     }
 }

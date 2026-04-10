@@ -1,4 +1,5 @@
 import Combine
+import CoreLocation
 import Foundation
 import WebRTC
 
@@ -19,7 +20,9 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var localVideoTrack: RTCVideoTrack?
     @Published private(set) var remoteVideoTrack: RTCVideoTrack?
     @Published private(set) var unreadMessageCounts: [String: Int] = [:]
+    @Published private(set) var currentLocation: SharedLocation?
     @Published var pendingChatNavigationUser: AppUser?
+    @Published var pendingMapFocusUser: AppUser?
     @Published var pendingInviteSearchUsername: String?
     @Published var pendingInviteShouldAutoSend = false
     @Published var callError: CallError?
@@ -39,6 +42,7 @@ final class AppViewModel: ObservableObject {
     private var outgoingRequestsObservationTask: Task<Void, Never>?
     private var systemCallEventsTask: Task<Void, Never>?
     private var notificationEventsTask: Task<Void, Never>?
+    private var locationObservationTask: Task<Void, Never>?
     private var previousUnreadMessageCounts: [String: Int] = [:]
     private var activeChatUserID: String?
     private var initializedUnreadUsers = Set<String>()
@@ -50,6 +54,7 @@ final class AppViewModel: ObservableObject {
         bind()
         observeSystemCallEvents()
         observeNotificationEvents()
+        observeLocationUpdates()
         restoreSessionIfNeeded()
     }
 
@@ -95,6 +100,7 @@ final class AppViewModel: ObservableObject {
     func signOut() async {
         await environment.notificationService.updateCurrentUser(nil)
         await SystemCallService.shared.updateCurrentUser(nil)
+        await environment.locationService.updateCurrentUser(nil)
         await environment.authService.signOut()
         environment.signalingService.disconnect()
         resetSessionState()
@@ -105,6 +111,7 @@ final class AppViewModel: ObservableObject {
             try await environment.authService.deleteAccount()
             await environment.notificationService.updateCurrentUser(nil)
             await SystemCallService.shared.updateCurrentUser(nil)
+            await environment.locationService.updateCurrentUser(nil)
             environment.signalingService.disconnect()
             resetSessionState()
         } catch {
@@ -122,11 +129,13 @@ final class AppViewModel: ObservableObject {
         localVideoTrack = nil
         remoteVideoTrack = nil
         unreadMessageCounts = [:]
+        currentLocation = nil
         previousUnreadMessageCounts = [:]
         initializedUnreadUsers = []
         activeChatUserID = nil
         notifiedIncomingCallID = nil
         pendingChatNavigationUser = nil
+        pendingMapFocusUser = nil
         pendingInviteSearchUsername = nil
         pendingInviteShouldAutoSend = false
         deferredInviteUsername = nil
@@ -141,6 +150,8 @@ final class AppViewModel: ObservableObject {
         conversationObservationTasks.removeAll()
         notificationEventsTask?.cancel()
         notificationEventsTask = nil
+        locationObservationTask?.cancel()
+        locationObservationTask = nil
     }
 
     func loadContacts() async {
@@ -149,6 +160,7 @@ final class AppViewModel: ObservableObject {
             if let currentUser {
                 observeUnreadCounts(for: contacts, currentUser: currentUser)
             }
+            await environment.locationService.updateFriends(contacts)
         } catch {
             callError = .general("Не удалось загрузить контакты.")
         }
@@ -268,6 +280,14 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    func showUserOnMap(_ user: AppUser) {
+        pendingMapFocusUser = user
+    }
+
+    func consumePendingMapFocus() {
+        pendingMapFocusUser = nil
+    }
+
     func consumePendingChatNavigation() {
         pendingChatNavigationUser = nil
     }
@@ -313,6 +333,13 @@ final class AppViewModel: ObservableObject {
                 self?.activeChatUserID = nil
             }
         )
+    }
+
+    func enableLocationSharing() async {
+        let granted = await environment.locationService.requestLocationAccess()
+        if !granted {
+            callError = .general(environment.permissionService.deniedMessage(for: .location))
+        }
     }
 
     func saveUsername(_ username: String) async -> UsernameSaveResult {
@@ -464,6 +491,21 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private func observeLocationUpdates() {
+        locationObservationTask?.cancel()
+        locationObservationTask = Task { [weak self] in
+            guard let self else { return }
+
+            for await location in environment.locationService.observeCurrentLocation() {
+                if Task.isCancelled {
+                    break
+                }
+
+                currentLocation = location
+            }
+        }
+    }
+
     private func observeNotificationEvents() {
         notificationEventsTask?.cancel()
         notificationEventsTask = Task { [weak self] in
@@ -538,6 +580,9 @@ final class AppViewModel: ObservableObject {
 
                 self.contacts = contacts
                 observeUnreadCounts(for: contacts, currentUser: currentUser)
+                Task {
+                    await self.environment.locationService.updateFriends(contacts)
+                }
             }
         }
     }
@@ -592,6 +637,7 @@ final class AppViewModel: ObservableObject {
             guard let self else { return }
             await self.environment.notificationService.updateCurrentUser(currentUser)
             await SystemCallService.shared.updateCurrentUser(currentUser)
+            await self.environment.locationService.updateCurrentUser(currentUser)
             await self.environment.callService.connect(currentUser: currentUser)
             await MainActor.run {
                 self.observeContacts(currentUser: currentUser)

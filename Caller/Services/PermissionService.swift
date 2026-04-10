@@ -4,6 +4,7 @@ import Foundation
 enum PermissionKind {
     case microphone
     case camera
+    case location
 }
 
 protocol PermissionServicing {
@@ -27,6 +28,8 @@ struct PermissionService: PermissionServicing {
             return "Для звонков необходим доступ к микрофону. Включите его в Настройках."
         case .camera:
             return "Для видеозвонков необходим доступ к камере. Включите его в Настройках."
+        case .location:
+            return "Для отображения друзей на карте необходим доступ к геопозиции. Включите его в Настройках."
         }
     }
 }
