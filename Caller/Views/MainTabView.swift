@@ -42,6 +42,10 @@ struct MainTabView: View {
             guard userID != nil else { return }
             selectedTab = 0
         }
+        .onChange(of: viewModel.pendingInviteSearchUsername) { _, username in
+            guard username != nil else { return }
+            selectedTab = 1
+        }
         .alert("Удалить аккаунт?", isPresented: $isShowingDeleteConfirmation) {
             Button("Отмена", role: .cancel) {}
             Button("Удалить", role: .destructive) {

@@ -55,6 +55,11 @@ struct ContentView: View {
         } message: {
             Text(viewModel.callError?.localizedDescription ?? "Что-то пошло не так.")
         }
+        .onOpenURL { url in
+            Task {
+                await viewModel.handleIncomingURL(url)
+            }
+        }
     }
 
     private var launchLoadingView: some View {

@@ -20,6 +20,8 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var remoteVideoTrack: RTCVideoTrack?
     @Published private(set) var unreadMessageCounts: [String: Int] = [:]
     @Published var pendingChatNavigationUser: AppUser?
+    @Published var pendingInviteSearchUsername: String?
+    @Published var pendingInviteShouldAutoSend = false
     @Published var callError: CallError?
     @Published var isLoading = false
     @Published private(set) var isRestoringSession = false
@@ -41,6 +43,7 @@ final class AppViewModel: ObservableObject {
     private var activeChatUserID: String?
     private var initializedUnreadUsers = Set<String>()
     private var notifiedIncomingCallID: UUID?
+    private var deferredInviteUsername: String?
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -124,6 +127,9 @@ final class AppViewModel: ObservableObject {
         activeChatUserID = nil
         notifiedIncomingCallID = nil
         pendingChatNavigationUser = nil
+        pendingInviteSearchUsername = nil
+        pendingInviteShouldAutoSend = false
+        deferredInviteUsername = nil
         isRestoringSession = false
         contactsObservationTask?.cancel()
         contactsObservationTask = nil
@@ -266,6 +272,31 @@ final class AppViewModel: ObservableObject {
         pendingChatNavigationUser = nil
     }
 
+    func consumePendingInviteSearch() {
+        pendingInviteSearchUsername = nil
+        pendingInviteShouldAutoSend = false
+    }
+
+    func handleIncomingURL(_ url: URL) async {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme == "caller",
+              components.host == "invite",
+              let usernameValue = components.queryItems?.first(where: { $0.name == "username" })?.value else {
+            return
+        }
+
+        let normalizedUsername = UsernameValidator.normalized(usernameValue)
+        guard !normalizedUsername.isEmpty else { return }
+
+        guard currentUser != nil, !isRestoringSession, !requiresUsernameSetup else {
+            deferredInviteUsername = normalizedUsername
+            return
+        }
+
+        pendingInviteSearchUsername = normalizedUsername
+        pendingInviteShouldAutoSend = true
+    }
+
     func makeChatViewModel(for user: AppUser) -> ChatViewModel? {
         guard let currentUser else { return nil }
         return ChatViewModel(
@@ -292,6 +323,7 @@ final class AppViewModel: ObservableObject {
             self.currentUser = updatedUser
             startBackgroundSessionServices(for: updatedUser)
             await loadSocialData()
+            processDeferredInviteIfNeeded()
             return .success
         } catch let error as ContactServiceError {
             switch error {
@@ -337,6 +369,7 @@ final class AppViewModel: ObservableObject {
         guard let currentUser else { return }
         guard !requiresUsernameSetup else { return }
         startBackgroundSessionServices(for: currentUser)
+        processDeferredInviteIfNeeded()
     }
 
     private func observeUnreadCounts(for contacts: [AppUser], currentUser: AppUser) {
@@ -566,5 +599,12 @@ final class AppViewModel: ObservableObject {
                 self.observeOutgoingFriendRequests()
             }
         }
+    }
+
+    private func processDeferredInviteIfNeeded() {
+        guard let deferredInviteUsername else { return }
+        pendingInviteSearchUsername = deferredInviteUsername
+        pendingInviteShouldAutoSend = true
+        self.deferredInviteUsername = nil
     }
 }

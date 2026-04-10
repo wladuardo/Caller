@@ -101,7 +101,7 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             HStack(spacing: 12) {
                 if currentUser.username?.isEmpty == false {
-                    ShareLink(item: shareMessage, subject: Text("Мой никнейм в Caller")) {
+                    ShareLink(item: shareInviteMessage, subject: Text("Приглашение в Caller")) {
                         compactActionButton(
                             title: "Поделиться",
                             systemName: "square.and.arrow.up",
@@ -139,6 +139,15 @@ struct SettingsView: View {
     private var shareMessage: String {
         let username = currentUser.username ?? ""
         return "Добавь меня в Caller по никнейму: @\(username)"
+    }
+
+    private var shareDeepLink: String {
+        let username = currentUser.username ?? ""
+        return "caller://invite?username=\(username)"
+    }
+
+    private var shareInviteMessage: String {
+        "Открой эту ссылку в Caller, чтобы сразу отправить мне запрос в друзья:\n\(shareDeepLink)"
     }
 
     private func uploadAvatar(from item: PhotosPickerItem) {

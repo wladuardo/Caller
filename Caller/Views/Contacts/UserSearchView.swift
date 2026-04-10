@@ -43,6 +43,11 @@ struct UserSearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             isSearchFocused = true
+            handlePendingInviteIfNeeded()
+        }
+        .onChange(of: viewModel.pendingInviteSearchUsername) { _, username in
+            guard username != nil else { return }
+            handlePendingInviteIfNeeded()
         }
         .sheet(isPresented: $isShowingQRScanner) {
             NavigationStack {
@@ -247,6 +252,15 @@ struct UserSearchView: View {
         searchQuery = username
         searchMessage = "Никнейм получен из QR-кода."
         search(automaticallySendRequest: false)
+    }
+
+    private func handlePendingInviteIfNeeded() {
+        guard let username = viewModel.pendingInviteSearchUsername else { return }
+        searchQuery = username
+        searchMessage = "Открыта ссылка-приглашение."
+        let shouldAutoSend = viewModel.pendingInviteShouldAutoSend
+        viewModel.consumePendingInviteSearch()
+        search(automaticallySendRequest: shouldAutoSend)
     }
 
     private func handleScannerFailure(_ message: String) {
