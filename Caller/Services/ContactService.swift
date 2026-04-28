@@ -11,6 +11,7 @@ protocol ContactServicing {
     func fetchUser(id: String) async throws -> AppUser?
     func updateUsername(_ username: String, for user: AppUser) async throws -> AppUser
     func updateAvatar(imageData: Data, for user: AppUser) async throws -> AppUser
+    func updateDeviceModel(_ deviceModel: String, for user: AppUser) async throws -> AppUser
     func setNotificationsMuted(_ isMuted: Bool, for mutedUserID: String) async throws -> [String]
     func searchUser(username: String) async throws -> AppUser?
 }
@@ -60,7 +61,8 @@ struct MockContactService: ContactServicing {
             avatarSystemName: user.avatarSystemName,
             avatarURL: user.avatarURL,
             username: username,
-            mutedNotificationUserIDs: user.mutedNotificationUserIDs
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs,
+            deviceModel: user.deviceModel
         )
     }
 
@@ -73,7 +75,22 @@ struct MockContactService: ContactServicing {
             avatarSystemName: user.avatarSystemName,
             avatarURL: user.avatarURL,
             username: user.username,
-            mutedNotificationUserIDs: user.mutedNotificationUserIDs
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs,
+            deviceModel: user.deviceModel
+        )
+    }
+
+    func updateDeviceModel(_ deviceModel: String, for user: AppUser) async throws -> AppUser {
+        AppUser(
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            avatarSystemName: user.avatarSystemName,
+            avatarURL: user.avatarURL,
+            username: user.username,
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs,
+            deviceModel: deviceModel,
+            sharedLocation: user.sharedLocation
         )
     }
 
@@ -165,10 +182,9 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             .collection("users")
             .document(currentUserID)
             .collection("friends")
-            .order(by: "displayName")
             .getDocuments()
 
-        return makeContacts(from: snapshot.documents, currentUserID: currentUserID)
+        return await makeContacts(from: snapshot.documents, currentUserID: currentUserID)
     }
 
     func observeContacts() -> AsyncStream<[AppUser]> {
@@ -184,7 +200,6 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                 .collection("users")
                 .document(currentUserID)
                 .collection("friends")
-                .order(by: "displayName")
                 .addSnapshotListener { snapshot, error in
                     if error != nil {
                         continuation.yield([])
@@ -196,7 +211,10 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                         return
                     }
 
-                    continuation.yield(self.makeContacts(from: documents, currentUserID: currentUserID))
+                    Task {
+                        let contacts = await self.makeContacts(from: documents, currentUserID: currentUserID)
+                        continuation.yield(contacts)
+                    }
                 }
 
             continuation.onTermination = { _ in
@@ -222,7 +240,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             avatarURL: data["avatarURL"] as? String,
             username: data["username"] as? String,
             mutedNotificationUserIDs: data["mutedNotificationUserIDs"] as? [String] ?? [],
-            sharedLocation: nil
+            sharedLocation: nil,
+            chatEncryptionPublicKey: data["chatEncryptionPublicKey"] as? String
         )
     }
 
@@ -429,7 +448,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             avatarSystemName: user.avatarSystemName,
             avatarURL: user.avatarURL,
             username: username,
-            mutedNotificationUserIDs: user.mutedNotificationUserIDs
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs,
+            deviceModel: user.deviceModel
         )
     }
 
@@ -450,7 +470,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             avatarSystemName: user.avatarSystemName,
             avatarURL: downloadURL.absoluteString,
             username: user.username,
-            mutedNotificationUserIDs: user.mutedNotificationUserIDs
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs,
+            deviceModel: user.deviceModel
         )
 
         let usersRef = db.collection("users").document(user.id)
@@ -467,6 +488,31 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
         _ = imageData
         throw ContactServiceError.avatarUploadUnavailable
 #endif
+    }
+
+    func updateDeviceModel(_ deviceModel: String, for user: AppUser) async throws -> AppUser {
+        let updatedUser = AppUser(
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            avatarSystemName: user.avatarSystemName,
+            avatarURL: user.avatarURL,
+            username: user.username,
+            mutedNotificationUserIDs: user.mutedNotificationUserIDs,
+            deviceModel: deviceModel,
+            sharedLocation: user.sharedLocation
+        )
+
+        let usersRef = db.collection("users").document(user.id)
+        try await usersRef.setData([
+            "deviceModel": deviceModel,
+            "updatedAt": Timestamp(date: .now)
+        ], merge: true)
+
+        let friendsSnapshot = try await usersRef.collection("friends").getDocuments()
+        try await propagateDeviceModelUpdate(updatedUser, friendIDs: friendsSnapshot.documents.map(\.documentID))
+
+        return updatedUser
     }
 
     func searchUser(username: String) async throws -> AppUser? {
@@ -505,7 +551,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             avatarSystemName: userData["avatarSystemName"] as? String ?? "person.crop.circle.fill",
             avatarURL: userData["avatarURL"] as? String,
             username: userData["username"] as? String,
-            mutedNotificationUserIDs: userData["mutedNotificationUserIDs"] as? [String] ?? []
+            mutedNotificationUserIDs: userData["mutedNotificationUserIDs"] as? [String] ?? [],
+            deviceModel: userData["deviceModel"] as? String
         )
     }
 
@@ -646,6 +693,10 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
             payload["username"] = username
         }
 
+        if let deviceModel = user.deviceModel, !deviceModel.isEmpty {
+            payload["deviceModel"] = deviceModel
+        }
+
         return payload
     }
 
@@ -671,7 +722,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                         email: email,
                         avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
                         avatarURL: data["avatarURL"] as? String,
-                        username: data["username"] as? String
+                        username: data["username"] as? String,
+                        deviceModel: data["deviceModel"] as? String
                     ),
                     sentAt: (document["sentAt"] as? Timestamp)?.dateValue() ?? .now
                 )
@@ -681,39 +733,64 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
         return requests
     }
 
-    private func makeContacts(from documents: [QueryDocumentSnapshot], currentUserID: String) -> [AppUser] {
-        documents.compactMap { document in
+    private func makeContacts(from documents: [QueryDocumentSnapshot], currentUserID: String) async -> [AppUser] {
+        var contacts: [AppUser] = []
+
+        for document in documents {
             let id = (document["id"] as? String) ?? document.documentID
 
-            guard let displayName = document["displayName"] as? String,
-                  let email = document["email"] as? String,
-                  id != currentUserID else {
-                return nil
+            guard id != currentUserID else {
+                continue
+            }
+
+            let profileData: [String: Any]? = if (document["displayName"] as? String) == nil ||
+                (document["email"] as? String) == nil ||
+                (document["chatEncryptionPublicKey"] as? String) == nil {
+                try? await db.collection("users").document(id).getDocument().data()
+            } else {
+                nil
+            }
+
+            guard let displayName = document["displayName"] as? String ?? profileData?["displayName"] as? String,
+                  let email = document["email"] as? String ?? profileData?["email"] as? String else {
+                continue
             }
 
             let sharedLocation: SharedLocation?
             if let rawLocation = document["sharedLocation"] as? [String: Any],
                let latitude = rawLocation["latitude"] as? Double,
                let longitude = rawLocation["longitude"] as? Double {
+                let batteryLevelPercent = rawLocation["batteryLevelPercent"] as? Int
+                    ?? (rawLocation["batteryLevelPercent"] as? NSNumber)?.intValue
                 sharedLocation = SharedLocation(
                     latitude: latitude,
                     longitude: longitude,
                     updatedAt: (rawLocation["updatedAt"] as? Timestamp)?.dateValue() ?? .now,
-                    horizontalAccuracy: rawLocation["horizontalAccuracy"] as? Double
+                    horizontalAccuracy: rawLocation["horizontalAccuracy"] as? Double,
+                    speed: rawLocation["speed"] as? Double,
+                    batteryLevelPercent: batteryLevelPercent
                 )
             } else {
                 sharedLocation = nil
             }
 
-            return AppUser(
+            contacts.append(AppUser(
                 id: id,
                 displayName: displayName,
                 email: email,
-                avatarSystemName: document["avatarSystemName"] as? String ?? "person.crop.circle.fill",
-                avatarURL: document["avatarURL"] as? String,
-                username: document["username"] as? String,
-                sharedLocation: sharedLocation
-            )
+                avatarSystemName: document["avatarSystemName"] as? String ??
+                    profileData?["avatarSystemName"] as? String ??
+                    "person.crop.circle.fill",
+                avatarURL: document["avatarURL"] as? String ?? profileData?["avatarURL"] as? String,
+                username: document["username"] as? String ?? profileData?["username"] as? String,
+                deviceModel: document["deviceModel"] as? String ?? profileData?["deviceModel"] as? String,
+                sharedLocation: sharedLocation,
+                chatEncryptionPublicKey: document["chatEncryptionPublicKey"] as? String ?? profileData?["chatEncryptionPublicKey"] as? String
+            ))
+        }
+
+        return contacts.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
     }
 
@@ -739,7 +816,8 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                         email: email,
                         avatarSystemName: data["avatarSystemName"] as? String ?? "person.crop.circle.fill",
                         avatarURL: data["avatarURL"] as? String,
-                        username: data["username"] as? String
+                        username: data["username"] as? String,
+                        deviceModel: data["deviceModel"] as? String
                     ),
                     sentAt: (document["sentAt"] as? Timestamp)?.dateValue() ?? .now
                 )
@@ -771,6 +849,29 @@ final class FirebaseSocialGraphService: ContactServicing, FriendServicing {
                 }
                 batch.setData(payload, forDocument: friendRef, merge: true)
             }
+            try await batch.commit()
+        }
+    }
+
+    private func propagateDeviceModelUpdate(_ user: AppUser, friendIDs: [String]) async throws {
+        guard !friendIDs.isEmpty, let deviceModel = user.deviceModel, !deviceModel.isEmpty else { return }
+
+        for chunkStart in stride(from: 0, to: friendIDs.count, by: 400) {
+            let batch = db.batch()
+            let chunkEnd = min(chunkStart + 400, friendIDs.count)
+
+            for friendID in friendIDs[chunkStart..<chunkEnd] {
+                let friendRef = db
+                    .collection("users")
+                    .document(friendID)
+                    .collection("friends")
+                    .document(user.id)
+                batch.setData([
+                    "deviceModel": deviceModel,
+                    "updatedAt": Timestamp(date: .now)
+                ], forDocument: friendRef, merge: true)
+            }
+
             try await batch.commit()
         }
     }

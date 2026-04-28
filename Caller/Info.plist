@@ -23,16 +23,15 @@
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
-	<key>NSCameraUsageDescription</key>
-	<string>Камера используется для сканирования QR-кодов и видеозвонков.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Геолокация нужна, чтобы показывать вас и ваших друзей на карте.</string>
 	<key>SignalingServerURL</key>
 	<string></string>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>location</string>
 		<string>remote-notification</string>
 		<string>voip</string>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
 </dict>
 </plist>

@@ -3,6 +3,7 @@ import FirebaseAuth
 import FirebaseFirestore
 import Foundation
 import GoogleSignIn
+import UIKit
 
 enum AuthenticationServiceError: LocalizedError {
     case recentLoginRequiredForApple
@@ -42,7 +43,8 @@ final class MockAuthenticationService: AuthenticationServicing {
             email: "google.user@example.com",
             avatarSystemName: "person.crop.circle.fill",
             avatarURL: nil,
-            username: nil
+            username: nil,
+            deviceModel: DeviceModelResolver.currentDeviceModelName()
         )
         currentUser = user
         return user
@@ -59,7 +61,8 @@ final class MockAuthenticationService: AuthenticationServicing {
             email: "apple.user@example.com",
             avatarSystemName: "person.crop.circle.badge.checkmark",
             avatarURL: nil,
-            username: nil
+            username: nil,
+            deviceModel: DeviceModelResolver.currentDeviceModelName()
         )
         currentUser = user
         return user
@@ -93,6 +96,7 @@ final class FirebaseAuthenticationService: AuthenticationServicing {
         let user = AppUser(firebaseUser: result.user)
         currentUser = user
         try? await FirebaseUserProfileStore().upsert(user: user)
+        await ChatEncryptionService.shared.ensureCurrentUserPublicKeyIsPublished(userID: user.id)
         return user
     }
 
@@ -114,10 +118,12 @@ final class FirebaseAuthenticationService: AuthenticationServicing {
             email: result.user.email ?? "apple.user@example.com",
             avatarSystemName: "person.crop.circle.badge.checkmark",
             avatarURL: nil,
-            username: nil
+            username: nil,
+            deviceModel: DeviceModelResolver.currentDeviceModelName()
         )
         currentUser = user
         try? await FirebaseUserProfileStore().upsert(user: user)
+        await ChatEncryptionService.shared.ensureCurrentUserPublicKeyIsPublished(userID: user.id)
         return user
     }
 
@@ -292,6 +298,7 @@ private struct FirebaseUserProfileStore {
             "displayName": user.displayName,
             "email": user.email,
             "avatarSystemName": user.avatarSystemName,
+            "deviceModel": user.deviceModel ?? DeviceModelResolver.currentDeviceModelName(),
             "updatedAt": Timestamp(date: .now)
         ]
 
@@ -302,6 +309,11 @@ private struct FirebaseUserProfileStore {
         if let username = user.username, !username.isEmpty {
             data["username"] = username
             data["usernameLowercased"] = username.lowercased()
+        }
+
+        if let publicKey = try? ChatEncryptionService.shared.currentPublicKeyBase64() {
+            data["chatEncryptionPublicKey"] = publicKey
+            data["chatEncryptionVersion"] = 1
         }
 
         try await db.collection("users").document(user.id).setData(data, merge: true)
@@ -316,7 +328,9 @@ extension AppUser {
             email: firebaseUser.email ?? "unknown@example.com",
             avatarSystemName: "person.crop.circle.fill",
             avatarURL: nil,
-            username: nil
+            username: nil,
+            deviceModel: DeviceModelResolver.currentDeviceModelName(),
+            chatEncryptionPublicKey: nil
         )
     }
 }

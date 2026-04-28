@@ -18,12 +18,38 @@
 		2F1B1F4A2F82E1B500A1B9E5 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 2F1B1F492F82E1B500A1B9E5 /* FirebaseMessaging */; };
 		2F1B1F512F82E6E300A1B9E5 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2F1B1F502F82E6E300A1B9E5 /* GoogleSignIn */; };
 		2F1B1F532F82E6E300A1B9E5 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 2F1B1F522F82E6E300A1B9E5 /* GoogleSignInSwift */; };
+		2F3576EF2F91571800E1D1CD /* LocationPush.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2F3576E82F91571800E1D1CD /* LocationPush.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2FFA08762F84541400FBFAD9 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 2FFA08752F84541400FBFAD9 /* FirebaseStorage */; };
 		2FFA08782F8456B100FBFAD9 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 2FFA08772F8456B100FBFAD9 /* FirebaseFunctions */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		2F3576ED2F91571800E1D1CD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2F1B1EEE2F82D32300A1B9E5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2F3576E72F91571800E1D1CD;
+			remoteInfo = LocationPush;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2F3576F02F91571800E1D1CD /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2F3576EF2F91571800E1D1CD /* LocationPush.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		2F1B1EF62F82D32300A1B9E5 /* Caller.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Caller.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F3576E82F91571800E1D1CD /* LocationPush.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LocationPush.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -34,6 +60,13 @@
 			);
 			target = 2F1B1EF52F82D32300A1B9E5 /* Caller */;
 		};
+		2F3576F42F91571800E1D1CD /* Exceptions for "LocationPush" folder in "LocationPush" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 2F3576E72F91571800E1D1CD /* LocationPush */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -43,6 +76,14 @@
 				2F1B1F322F82D9DF00A1B9E5 /* Exceptions for "Caller" folder in "Caller" target */,
 			);
 			path = Caller;
+			sourceTree = "<group>";
+		};
+		2F3576E92F91571800E1D1CD /* LocationPush */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2F3576F42F91571800E1D1CD /* Exceptions for "LocationPush" folder in "LocationPush" target */,
+			);
+			path = LocationPush;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -68,6 +109,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		2F3576E52F91571800E1D1CD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -75,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				2F1B1EF82F82D32300A1B9E5 /* Caller */,
+				2F3576E92F91571800E1D1CD /* LocationPush */,
 				2FFA08742F84541400FBFAD9 /* Frameworks */,
 				2F1B1EF72F82D32300A1B9E5 /* Products */,
 			);
@@ -84,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				2F1B1EF62F82D32300A1B9E5 /* Caller.app */,
+				2F3576E82F91571800E1D1CD /* LocationPush.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -105,10 +155,12 @@
 				2F1B1EF22F82D32300A1B9E5 /* Sources */,
 				2F1B1EF32F82D32300A1B9E5 /* Frameworks */,
 				2F1B1EF42F82D32300A1B9E5 /* Resources */,
+				2F3576F02F91571800E1D1CD /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				2F3576EE2F91571800E1D1CD /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				2F1B1EF82F82D32300A1B9E5 /* Caller */,
@@ -133,6 +185,28 @@
 			productReference = 2F1B1EF62F82D32300A1B9E5 /* Caller.app */;
 			productType = "com.apple.product-type.application";
 		};
+		2F3576E72F91571800E1D1CD /* LocationPush */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F3576F32F91571800E1D1CD /* Build configuration list for PBXNativeTarget "LocationPush" */;
+			buildPhases = (
+				2F3576E42F91571800E1D1CD /* Sources */,
+				2F3576E52F91571800E1D1CD /* Frameworks */,
+				2F3576E62F91571800E1D1CD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2F3576E92F91571800E1D1CD /* LocationPush */,
+			);
+			name = LocationPush;
+			packageProductDependencies = (
+			);
+			productName = LocationPush;
+			productReference = 2F3576E82F91571800E1D1CD /* LocationPush.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -144,6 +218,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					2F1B1EF52F82D32300A1B9E5 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					2F3576E72F91571800E1D1CD = {
 						CreatedOnToolsVersion = 26.4;
 					};
 				};
@@ -168,12 +245,20 @@
 			projectRoot = "";
 			targets = (
 				2F1B1EF52F82D32300A1B9E5 /* Caller */,
+				2F3576E72F91571800E1D1CD /* LocationPush */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		2F1B1EF42F82D32300A1B9E5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2F3576E62F91571800E1D1CD /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -190,7 +275,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		2F3576E42F91571800E1D1CD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2F3576EE2F91571800E1D1CD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2F3576E72F91571800E1D1CD /* LocationPush */;
+			targetProxy = 2F3576ED2F91571800E1D1CD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		2F1B1EFF2F82D32300A1B9E5 /* Debug */ = {
@@ -325,7 +425,9 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Caller/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Caller uses the camera for video calls and live preview.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Камера используется для сканирования QR-кодов и видеозвонков.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Фоновая геолокация нужна, чтобы друзья могли видеть вашу актуальную позицию, когда вы включили шаринг.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Геолокация нужна, чтобы показывать вас и ваших друзей на карте.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Caller uses the microphone for audio and video calls.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -376,7 +478,9 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Caller/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Caller uses the camera for video calls and live preview.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Камера используется для сканирования QR-кодов и видеозвонков.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Фоновая геолокация нужна, чтобы друзья могли видеть вашу актуальную позицию, когда вы включили шаринг.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Геолокация нужна, чтобы показывать вас и ваших друзей на карте.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Caller uses the microphone for audio and video calls.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -411,6 +515,69 @@
 			};
 			name = Release;
 		};
+		2F3576F12F91571800E1D1CD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SVR98VYW78;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocationPush/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LocationPush;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vkovalskiyk.Caller.LocationPush;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2F3576F22F91571800E1D1CD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SVR98VYW78;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocationPush/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LocationPush;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vkovalskiyk.Caller.LocationPush;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -428,6 +595,15 @@
 			buildConfigurations = (
 				2F1B1F022F82D32300A1B9E5 /* Debug */,
 				2F1B1F032F82D32300A1B9E5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2F3576F32F91571800E1D1CD /* Build configuration list for PBXNativeTarget "LocationPush" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2F3576F12F91571800E1D1CD /* Debug */,
+				2F3576F22F91571800E1D1CD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

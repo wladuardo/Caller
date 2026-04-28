@@ -2,11 +2,16 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = AppViewModel(environment: AppEnvironment())
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         ZStack {
             Group {
-                if viewModel.currentUser == nil {
+                if !hasCompletedOnboarding {
+                    OnboardingView {
+                        hasCompletedOnboarding = true
+                    }
+                } else if viewModel.currentUser == nil {
                     AuthenticationView(viewModel: viewModel)
                 } else if viewModel.isRestoringSession {
                     launchLoadingView

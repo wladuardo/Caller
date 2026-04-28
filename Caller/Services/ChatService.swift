@@ -115,15 +115,27 @@ final class FirebaseChatService: ChatServicing {
     private let db: Firestore
     private let logger: Logger
     private let cache = PersistentChatMessageCache()
+    private let encryptionService: ChatEncryptionService
 
-    init(db: Firestore = Firestore.firestore(), logger: Logger = Logger()) {
+    init(
+        db: Firestore = Firestore.firestore(),
+        logger: Logger = Logger(),
+        encryptionService: ChatEncryptionService = .shared
+    ) {
         self.db = db
         self.logger = logger
+        self.encryptionService = encryptionService
     }
 
     func cachedMessages(with user: AppUser, currentUser: AppUser) async -> [ChatMessage] {
         let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
-        return await cache.messages(for: conversationID)
+        let records = await cache.records(for: conversationID)
+        return await makeChatMessages(
+            from: records,
+            participant: user,
+            currentUser: currentUser,
+            conversationID: conversationID
+        )
     }
 
     func observeMessages(with user: AppUser, currentUser: AppUser) -> AsyncStream<[ChatMessage]> {
@@ -132,7 +144,7 @@ final class FirebaseChatService: ChatServicing {
         return AsyncStream { continuation in
             let listenerBox = ListenerBox()
             let setupTask = Task {
-                let cachedMessages = await cache.messages(for: conversationID)
+                let cachedMessages = await cachedMessages(with: user, currentUser: currentUser)
                 if !cachedMessages.isEmpty {
                     continuation.yield(cachedMessages)
                 }
@@ -154,7 +166,7 @@ final class FirebaseChatService: ChatServicing {
                         }
                         guard let snapshot else { return }
 
-                        let messages = snapshot.documents.compactMap { document -> ChatMessage? in
+                        let records = snapshot.documents.compactMap { document -> StoredChatMessageRecord? in
                             guard let senderID = document["senderID"] as? String,
                                   let recipientID = document["recipientID"] as? String else {
                                 return nil
@@ -179,12 +191,16 @@ final class FirebaseChatService: ChatServicing {
                                 attachment = nil
                             }
 
-                            return ChatMessage(
+                            let textEncryptionVersion = document["textEncryptionVersion"] as? Int
+                                ?? (document["textEncryptionVersion"] as? NSNumber)?.intValue
+
+                            return StoredChatMessageRecord(
                                 id: document.documentID,
                                 conversationID: conversationID,
                                 senderID: senderID,
                                 recipientID: recipientID,
                                 text: document["text"] as? String ?? "",
+                                textEncryptionVersion: textEncryptionVersion,
                                 attachment: attachment,
                                 sentAt: (document["sentAt"] as? Timestamp)?.dateValue() ?? .now,
                                 isReadByRecipient: (document["isReadByRecipient"] as? Bool) ?? false
@@ -192,15 +208,23 @@ final class FirebaseChatService: ChatServicing {
                         }
 
                         Task {
-                            await self.cache.store(messages, for: conversationID)
+                            await self.cache.store(records, for: conversationID)
+                            let messages = await self.makeChatMessages(
+                                from: records,
+                                participant: user,
+                                currentUser: currentUser,
+                                conversationID: conversationID
+                            )
+                            continuation.yield(messages)
                         }
-                        continuation.yield(messages)
                     }
             }
 
             continuation.onTermination = { _ in
                 setupTask.cancel()
-                listenerBox.listener?.remove()
+                Task { @MainActor in
+                    listenerBox.listener?.remove()
+                }
             }
         }
     }
@@ -334,22 +358,23 @@ final class FirebaseChatService: ChatServicing {
         }
         try await batch.commit()
 
-        let cachedMessages = await cache.messages(for: conversationID).map { message in
-            guard message.senderID == user.id, message.recipientID == currentUser.id else {
-                return message
+        let cachedRecords = await cache.records(for: conversationID).map { record in
+            guard record.senderID == user.id, record.recipientID == currentUser.id else {
+                return record
             }
-            return ChatMessage(
-                id: message.id,
-                conversationID: message.conversationID,
-                senderID: message.senderID,
-                recipientID: message.recipientID,
-                text: message.text,
-                attachment: message.attachment,
-                sentAt: message.sentAt,
+            return StoredChatMessageRecord(
+                id: record.id,
+                conversationID: record.conversationID,
+                senderID: record.senderID,
+                recipientID: record.recipientID,
+                text: record.text,
+                textEncryptionVersion: record.textEncryptionVersion,
+                attachment: record.attachment,
+                sentAt: record.sentAt,
                 isReadByRecipient: true
             )
         }
-        await cache.store(cachedMessages, for: conversationID)
+        await cache.store(cachedRecords, for: conversationID)
     }
 
     func setTyping(_ isTyping: Bool, with user: AppUser, currentUser: AppUser) async throws {
@@ -383,6 +408,7 @@ final class FirebaseChatService: ChatServicing {
         guard !trimmedText.isEmpty || attachment != nil else { return }
 
         let conversationID = ChatConversation.id(for: currentUser.id, and: user.id)
+        await encryptionService.ensureCurrentUserPublicKeyIsPublished(userID: currentUser.id)
         let conversationRef = db.collection("conversations").document(conversationID)
         let messageRef = conversationRef.collection("messages").document()
         let sentAt = Timestamp(date: .now)
@@ -392,6 +418,16 @@ final class FirebaseChatService: ChatServicing {
             messageID: messageRef.documentID
         )
         let previewText = conversationPreviewText(text: trimmedText, attachment: uploadedAttachment)
+        let participantPublicKey = try await resolveEncryptionPublicKey(for: user)
+        let encryptedTextPayload: EncryptedChatTextPayload? = if !trimmedText.isEmpty {
+            try encryptionService.encryptText(
+                trimmedText,
+                with: participantPublicKey,
+                conversationID: conversationID
+            )
+        } else {
+            nil
+        }
 
         let batch = db.batch()
         batch.setData([
@@ -407,10 +443,13 @@ final class FirebaseChatService: ChatServicing {
         var messagePayload: [String: Any] = [
             "senderID": currentUser.id,
             "recipientID": user.id,
-            "text": trimmedText,
+            "text": encryptedTextPayload?.ciphertextBase64 ?? "",
             "sentAt": sentAt,
             "isReadByRecipient": false
         ]
+        if let encryptedTextPayload {
+            messagePayload["textEncryptionVersion"] = encryptedTextPayload.encryptionVersion
+        }
         if let uploadedAttachment {
             var attachmentPayload: [String: Any] = [
                 "kind": uploadedAttachment.kind.rawValue,
@@ -429,17 +468,18 @@ final class FirebaseChatService: ChatServicing {
         batch.setData(messagePayload, forDocument: messageRef)
         do {
             try await batch.commit()
-            let newMessage = ChatMessage(
+            let cachedRecord = StoredChatMessageRecord(
                 id: messageRef.documentID,
                 conversationID: conversationID,
                 senderID: currentUser.id,
                 recipientID: user.id,
-                text: trimmedText,
+                text: encryptedTextPayload?.ciphertextBase64 ?? "",
+                textEncryptionVersion: encryptedTextPayload?.encryptionVersion,
                 attachment: uploadedAttachment,
                 sentAt: sentAt.dateValue(),
                 isReadByRecipient: false
             )
-            await cache.append(newMessage, for: conversationID)
+            await cache.append(cachedRecord, for: conversationID)
         } catch {
             logger.error("Failed to send chat message: \(error.localizedDescription)")
             throw error
@@ -448,7 +488,7 @@ final class FirebaseChatService: ChatServicing {
 
     private func conversationPreviewText(text: String, attachment: ChatAttachment?) -> String {
         if !text.isEmpty {
-            return text
+            return "Новое сообщение"
         }
         guard let attachment else {
             return ""
@@ -457,7 +497,69 @@ final class FirebaseChatService: ChatServicing {
         case .image:
             return "Фото"
         case .file:
-            return "Файл: \(attachment.fileName)"
+            return "Файл"
+        }
+    }
+
+    private func resolveEncryptionPublicKey(for user: AppUser) async throws -> String {
+        if let publicKey = user.chatEncryptionPublicKey,
+           !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return publicKey
+        }
+
+        let document = try await db.collection("users").document(user.id).getDocument()
+        guard let publicKey = document.data()?["chatEncryptionPublicKey"] as? String,
+              !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ChatEncryptionError.missingRecipientPublicKey
+        }
+
+        return publicKey
+    }
+
+    private func makeChatMessages(
+        from records: [StoredChatMessageRecord],
+        participant: AppUser,
+        currentUser: AppUser,
+        conversationID: String
+    ) async -> [ChatMessage] {
+        let participantPublicKey = try? await resolveEncryptionPublicKey(for: participant)
+
+        return records.map { record in
+            let resolvedText: String
+            if let version = record.textEncryptionVersion, version > 0 {
+                guard let participantPublicKey else {
+                    resolvedText = "Сообщение недоступно"
+                    return ChatMessage(
+                        id: record.id,
+                        conversationID: record.conversationID,
+                        senderID: record.senderID,
+                        recipientID: record.recipientID,
+                        text: resolvedText,
+                        attachment: record.attachment,
+                        sentAt: record.sentAt,
+                        isReadByRecipient: record.isReadByRecipient
+                    )
+                }
+
+                resolvedText = (try? encryptionService.decryptText(
+                    record.text,
+                    with: participantPublicKey,
+                    conversationID: conversationID
+                )) ?? "Сообщение недоступно"
+            } else {
+                resolvedText = record.text
+            }
+
+            return ChatMessage(
+                id: record.id,
+                conversationID: record.conversationID,
+                senderID: record.senderID,
+                recipientID: record.recipientID,
+                text: resolvedText,
+                attachment: record.attachment,
+                sentAt: record.sentAt,
+                isReadByRecipient: record.isReadByRecipient
+            )
         }
     }
 
@@ -561,7 +663,7 @@ final class FirebaseChatService: ChatServicing {
 }
 
 private actor PersistentChatMessageCache {
-    private var storage: [String: [ChatMessage]] = [:]
+    private var storage: [String: [StoredChatMessageRecord]] = [:]
     private let fileManager = FileManager.default
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -577,14 +679,14 @@ private actor PersistentChatMessageCache {
         }
     }
 
-    func messages(for conversationID: String) -> [ChatMessage] {
+    func records(for conversationID: String) -> [StoredChatMessageRecord] {
         if let cachedMessages = storage[conversationID] {
             return cachedMessages
         }
 
         guard let fileURL = fileURL(for: conversationID),
               let data = try? Data(contentsOf: fileURL),
-              let messages = try? decoder.decode([ChatMessage].self, from: data) else {
+              let messages = try? decoder.decode([StoredChatMessageRecord].self, from: data) else {
             return []
         }
 
@@ -592,12 +694,12 @@ private actor PersistentChatMessageCache {
         return messages
     }
 
-    func store(_ messages: [ChatMessage], for conversationID: String) {
+    func store(_ messages: [StoredChatMessageRecord], for conversationID: String) {
         storage[conversationID] = messages
         persist(messages, for: conversationID)
     }
 
-    func append(_ message: ChatMessage, for conversationID: String) {
+    func append(_ message: StoredChatMessageRecord, for conversationID: String) {
         var messages = storage[conversationID] ?? []
         messages.removeAll { $0.id == message.id }
         messages.append(message)
@@ -606,7 +708,7 @@ private actor PersistentChatMessageCache {
         persist(messages, for: conversationID)
     }
 
-    private func persist(_ messages: [ChatMessage], for conversationID: String) {
+    private func persist(_ messages: [StoredChatMessageRecord], for conversationID: String) {
         guard let fileURL = fileURL(for: conversationID),
               let data = try? encoder.encode(messages) else {
             return
@@ -620,6 +722,18 @@ private actor PersistentChatMessageCache {
     }
 }
 
-private final class ListenerBox {
+private struct StoredChatMessageRecord: Codable, Equatable {
+    let id: String
+    let conversationID: String
+    let senderID: String
+    let recipientID: String
+    let text: String
+    let textEncryptionVersion: Int?
+    let attachment: ChatAttachment?
+    let sentAt: Date
+    let isReadByRecipient: Bool
+}
+
+private final class ListenerBox: @unchecked Sendable {
     var listener: ListenerRegistration?
 }

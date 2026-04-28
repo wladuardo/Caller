@@ -24,9 +24,6 @@ struct CallerApp: App {
         WindowGroup {
             ContentView()
                 .tint(.blue)
-                .task {
-                    await notificationService.requestAuthorization()
-                }
         }
     }
 }

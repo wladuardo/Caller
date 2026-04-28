@@ -3,6 +3,7 @@ import FirebaseCore
 
 final class AppEnvironment {
     let authService: AuthenticationServicing
+    let currentUserService: CurrentUserServicing
     let contactService: ContactServicing
     let friendService: FriendServicing
     let chatService: ChatServicing
@@ -27,18 +28,20 @@ final class AppEnvironment {
         self.logger = logger
 
         let resolvedAuthService = authService ?? Self.makeAuthService(configuration: configuration, logger: logger)
+        let resolvedCurrentUserService = CurrentUserService(authService: resolvedAuthService)
         let resolvedContactService = contactService ?? Self.makeContactService(
             configuration: configuration,
-            authService: resolvedAuthService
+            currentUserService: resolvedCurrentUserService
         )
         let resolvedFriendService = Self.makeFriendService(
             configuration: configuration,
-            authService: resolvedAuthService
+            currentUserService: resolvedCurrentUserService
         )
         let resolvedChatService = Self.makeChatService(configuration: configuration, logger: logger)
         let resolvedNotificationService = Self.makeNotificationService()
         let resolvedLocationService = Self.makeLocationService(configuration: configuration, logger: logger)
         self.authService = resolvedAuthService
+        self.currentUserService = resolvedCurrentUserService
         self.contactService = resolvedContactService
         self.friendService = resolvedFriendService
         self.chatService = resolvedChatService
@@ -91,10 +94,10 @@ final class AppEnvironment {
 
     private static func makeContactService(
         configuration: AppConfiguration,
-        authService: AuthenticationServicing
+        currentUserService: CurrentUserServicing
     ) -> ContactServicing {
         if configuration.hasFirebaseConfiguration, FirebaseApp.app() != nil {
-            return FirebaseSocialGraphService(currentUserProvider: { authService.currentUser })
+            return FirebaseSocialGraphService(currentUserProvider: { currentUserService.currentUser })
         } else {
             return MockContactService()
         }
@@ -102,10 +105,10 @@ final class AppEnvironment {
 
     private static func makeFriendService(
         configuration: AppConfiguration,
-        authService: AuthenticationServicing
+        currentUserService: CurrentUserServicing
     ) -> FriendServicing {
         if configuration.hasFirebaseConfiguration, FirebaseApp.app() != nil {
-            return FirebaseSocialGraphService(currentUserProvider: { authService.currentUser })
+            return FirebaseSocialGraphService(currentUserProvider: { currentUserService.currentUser })
         } else {
             return MockFriendService()
         }
